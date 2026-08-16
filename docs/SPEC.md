@@ -194,7 +194,7 @@ Brush sizes and radii, in 1/16-texel units:
 | Medium (default) | `1` | `40` | 2.5 |
 | Large | `2` | `64` | 4.0 |
 
-`Brush.stamp(canvas, u8, v8, size, value)` MUST be implemented exactly as:
+The brush is a **solid disc**. A texel is painted when its centre lies inside the radius:
 
 ```
 r  = radius(size)
@@ -202,28 +202,49 @@ for pv in clamp(floor((v8 - r) / 16), 0, 15) .. clamp(floor((v8 + r) / 16), 0, 1
   for pu in clamp(floor((u8 - r) / 16), 0, 15) .. clamp(floor((u8 + r) / 16), 0, 15):
     dx = (pu * 16 + 8) - u8
     dy = (pv * 16 + 8) - v8
-    d2 = dx*dx + dy*dy                       # integer
-    t  = BAYER4[pv & 3][pu & 3]              # 0..15
-    if 256 * d2 < r*r * (16 - t) * (16 - t): # integer comparison, no sqrt, no float
-        canvas[pv * 16 + pu] = value         # value = 0xFF_RR_GG_BB, or 0 to erase
+    d2 = dx*dx + dy*dy       # integer
+    if d2 < r*r:             # integer comparison, no sqrt, no float
+        canvas[pv * 16 + pu] = value   # value = 0xFF_RR_GG_BB, or 0 to erase
 ```
 
-with the standard 4×4 Bayer matrix:
+At the small size this paints 2×2 texels when aimed at a texel corner and 3×3 when aimed at a
+texel centre; medium is 4×4–5×5 and large is an 8-wide disc.
 
-```
-BAYER4 = [[ 0,  8,  2, 10],
-          [12,  4, 14,  6],
-          [ 3, 11,  1,  9],
-          [15,  7, 13,  5]]
-```
+> **Changed after playtesting.** The brush originally dithered its edge with a 4×4 Bayer
+> threshold, intended as a soft spray falloff. In game it read as *speckly* rather than soft, and
+> at the small size it made drags visibly dotty, because a dithered texel is only reached when a
+> stamp centre passes almost exactly over it. A solid disc also makes §4.4 provable: with dithering
+> a stroke can never be solid along its path, by design.
 
 * The result MUST be bit-identical on client and server for identical inputs. No
   floating-point arithmetic is permitted anywhere in this function.
 * Paint MUST NOT spill onto adjacent faces or adjacent blocks: texels outside `0..15` are
   clipped, not wrapped.
-* Erasing uses `value = 0` and is otherwise identical, including the dither pattern — so an
-  erase stroke feathers exactly the way a paint stroke does.
+* Erasing uses `value = 0` and is otherwise identical, so an erase covers exactly what a paint
+  stroke of the same size and path would have covered.
 * A stamp that changes no texel MUST NOT consume a charge and MUST NOT be broadcast.
+
+### 4.4 Strokes
+
+Holding use samples the crosshair on a timer, so consecutive samples are separated by however far
+the player moved in between. Stamping one disc per sample therefore produces a row of spaced dots,
+not a line. A paint request MAY carry the previous sample point and the `stroke` flag (§7.2), in
+which case the whole segment is painted:
+
+```
+Brush.stampLine(canvas, u0, v0, u1, v1, size, value)
+```
+
+* The walk MUST advance **one quantisation unit (1/16 texel) at a time** along the segment,
+  stamping at each step. This is the finest step the wire format can express, and it is required
+  rather than merely permitted: it guarantees that a fast drag paints byte-identically to dragging
+  the same path infinitely slowly, so a stroke's appearance never depends on mouse speed or on the
+  sampling tick.
+* The walk is bounded at 256 steps, since neither coordinate can span more than 255 units.
+* A stroke MUST be solid along its whole path: every point on the segment lies in a painted texel.
+* A stroke MUST only ever join two points on the **same canvas**. When the crosshair moves to a
+  different block or face, or leaves a block entirely, the stroke restarts at the new point rather
+  than joining across the gap.
 
 ---
 
@@ -345,7 +366,7 @@ to at most 4 per second per player.
 
 ## 7. Network protocol
 
-Protocol version **1**. All payloads are in the `simple_graffiti` namespace and MUST be
+Protocol version **2**. All payloads are in the `simple_graffiti` namespace and MUST be
 registered as **optional** channels (`PayloadRegistrar.optional()` on NeoForge). Neither side
 may send a payload to a peer that has not declared the channel
 (`ServerPlayNetworking.canSend` / `ClientPlayNetworking.canSend` on Fabric;
@@ -368,7 +389,7 @@ Sent once, on player join, only to players whose connection has the channel.
 A client that receives a `protocolVersion` it does not implement MUST log one line and remain
 in capability state `NONE` (§10).
 
-### 7.2 `simple_graffiti:paint` (C2S, play) — 13 bytes
+### 7.2 `simple_graffiti:paint` (C2S, play) — 15 bytes
 
 | Field | Type |
 | :--- | :--- |
@@ -377,18 +398,26 @@ in capability state `NONE` (§10).
 | `u8` | byte `0..255` |
 | `v8` | byte `0..255` |
 | `brush` | byte `0..2` |
-| `flags` | byte — bit 0: erase (scrub sponge), bit 1: offhand, bit 2: whole face |
+| `flags` | byte — bit 0: erase (scrub sponge), bit 1: offhand, bit 2: whole face, bit 3: stroke |
+| `fromU8` | byte `0..255` — previous sample point, meaningful only with the stroke bit |
+| `fromV8` | byte `0..255` |
+
+With the stroke bit set, the server paints the segment `from → (u8, v8)` (§4.4) instead of a
+single disc. The two points are always on the canvas named by `pos`/`face`; a client MUST NOT set
+the bit when the previous sample was on a different canvas. Without the bit, `fromU8`/`fromV8`
+MUST be ignored.
 
 The colour is **not** sent: the server reads it from the can the player is holding, so a
 client cannot paint a colour it does not have. Out-of-range `face` or `brush` MUST cause the
 packet to be dropped, not clamped. `flags` bit 2 is valid only together with bit 0 (a whole
 face clear is an erase).
 
-### 7.3 `simple_graffiti:stamp` (S2C, play) — 16 bytes
+### 7.3 `simple_graffiti:stamp` (S2C, play) — 18 bytes
 
 The `paint` fields plus `rgb` (3 bytes, big-endian `R G B`), which recipients expand to
 `0xFF_RR_GG_BB`. When `flags` bit 0 is set the colour bytes MUST be `0` and recipients apply
-`value = 0`. Recipients apply `Brush.stamp` with exactly these arguments.
+`value = 0`. Recipients apply `Brush.stamp` — or `Brush.stampLine` when the stroke bit is set —
+with exactly these arguments, so every observer replays the same stroke the painter predicted.
 
 ### 7.4 `simple_graffiti:canvas_sync` (S2C, play)
 
@@ -435,7 +464,9 @@ canvas of 256 distinct colours; a single-colour tag is a handful of bytes.
 
 ### 7.8 Bandwidth bounds
 
-* A continuous sprayer generates ≤ 4 × 16 bytes/s = 64 B/s per observer.
+* A continuous sprayer generates ≤ 4 × 18 bytes/s = 72 B/s per observer, regardless of how fast
+  they drag: a whole segment costs one payload, which is the point of carrying the previous point
+  rather than sampling more often.
 * Chunk sync for a chunk at the 1 024-canvas cap is ≤ 1 MB uncompressed pre-RLE and MUST be
   spread over at least 2 payloads; the connection's own compression applies on top.
 

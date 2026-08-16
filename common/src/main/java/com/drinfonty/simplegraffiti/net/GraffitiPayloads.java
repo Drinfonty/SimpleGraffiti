@@ -26,7 +26,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
  */
 public final class GraffitiPayloads {
 	/** Bumped whenever the wire format changes; a mismatch is treated exactly as "no mod". */
-	public static final int PROTOCOL_VERSION = 1;
+	public static final int PROTOCOL_VERSION = 2;
 
 	/** SPEC 7.4: a chunk with more canvases than this is sent as several payloads. */
 	public static final int MAX_SYNC_ENTRIES = 512;
@@ -48,7 +48,15 @@ public final class GraffitiPayloads {
 	public static final int FLAG_ERASE = 1;
 	public static final int FLAG_OFFHAND = 1 << 1;
 	public static final int FLAG_WHOLE_FACE = 1 << 2;
-	private static final int FLAG_MASK = FLAG_ERASE | FLAG_OFFHAND | FLAG_WHOLE_FACE;
+
+	/**
+	 * The op continues a stroke: paint the segment from the previous point to this one, rather than
+	 * a lone disc at this one. Without it a drag can only ever be a row of dots spaced by however
+	 * fast the player moved.
+	 */
+	public static final int FLAG_STROKE = 1 << 3;
+
+	private static final int FLAG_MASK = FLAG_ERASE | FLAG_OFFHAND | FLAG_WHOLE_FACE | FLAG_STROKE;
 
 	/** Scopes for {@link ClearS2C}. */
 	public static final int SCOPE_FACE = 0;
@@ -115,7 +123,7 @@ public final class GraffitiPayloads {
 	 * SPEC 7.2, 13 bytes. The colour is deliberately absent: the server reads it from the can the
 	 * player is holding, so a client cannot paint a colour it does not have.
 	 */
-	public record PaintC2S(long pos, int face, int u8, int v8, int brush, int flags)
+	public record PaintC2S(long pos, int face, int u8, int v8, int brush, int flags, int fromU8, int fromV8)
 		implements CustomPacketPayload {
 
 		public PaintC2S {
@@ -126,9 +134,19 @@ public final class GraffitiPayloads {
 				throw new IllegalArgumentException("brush out of range: " + brush);
 			}
 
-			if (u8 < 0 || u8 > 255 || v8 < 0 || v8 > 255) {
+			if (u8 < 0 || u8 > 255 || v8 < 0 || v8 > 255
+				|| fromU8 < 0 || fromU8 > 255 || fromV8 < 0 || fromV8 > 255) {
 				throw new IllegalArgumentException("hit point out of range");
 			}
+		}
+
+		/** A one-shot stamp; the stroke origin is ignored. */
+		public static PaintC2S stamp(long pos, int face, int u8, int v8, int brush, int flags) {
+			return new PaintC2S(pos, face, u8, v8, brush, flags, u8, v8);
+		}
+
+		public boolean stroke() {
+			return (flags & FLAG_STROKE) != 0;
 		}
 
 		public static final StreamCodec<FriendlyByteBuf, PaintC2S> CODEC = StreamCodec.of(
@@ -139,9 +157,13 @@ public final class GraffitiPayloads {
 				buffer.writeByte(payload.v8);
 				buffer.writeByte(payload.brush);
 				buffer.writeByte(payload.flags);
+				buffer.writeByte(payload.fromU8);
+				buffer.writeByte(payload.fromV8);
 			},
 			buffer -> new PaintC2S(
 				buffer.readLong(),
+				readUnsignedByte(buffer),
+				readUnsignedByte(buffer),
 				readUnsignedByte(buffer),
 				readUnsignedByte(buffer),
 				readUnsignedByte(buffer),
@@ -171,8 +193,8 @@ public final class GraffitiPayloads {
 	 * replay {@code Brush.stamp} with exactly these arguments, which is why the operation has to be
 	 * deterministic and idempotent.
 	 */
-	public record StampS2C(long pos, int face, int u8, int v8, int brush, int flags, int rgb)
-		implements CustomPacketPayload {
+	public record StampS2C(long pos, int face, int u8, int v8, int brush, int flags, int rgb,
+		int fromU8, int fromV8) implements CustomPacketPayload {
 
 		public StampS2C {
 			checkFace(face);
@@ -182,9 +204,14 @@ public final class GraffitiPayloads {
 				throw new IllegalArgumentException("brush out of range: " + brush);
 			}
 
-			if (u8 < 0 || u8 > 255 || v8 < 0 || v8 > 255) {
+			if (u8 < 0 || u8 > 255 || v8 < 0 || v8 > 255
+				|| fromU8 < 0 || fromU8 > 255 || fromV8 < 0 || fromV8 > 255) {
 				throw new IllegalArgumentException("hit point out of range");
 			}
+		}
+
+		public boolean stroke() {
+			return (flags & FLAG_STROKE) != 0;
 		}
 
 		public static final StreamCodec<FriendlyByteBuf, StampS2C> CODEC = StreamCodec.of(
@@ -198,6 +225,8 @@ public final class GraffitiPayloads {
 				buffer.writeByte(payload.rgb >>> 16);
 				buffer.writeByte(payload.rgb >>> 8);
 				buffer.writeByte(payload.rgb);
+				buffer.writeByte(payload.fromU8);
+				buffer.writeByte(payload.fromV8);
 			},
 			buffer -> {
 				long pos = buffer.readLong();
@@ -209,7 +238,10 @@ public final class GraffitiPayloads {
 				int red = readUnsignedByte(buffer);
 				int green = readUnsignedByte(buffer);
 				int blue = readUnsignedByte(buffer);
-				return new StampS2C(pos, face, u8, v8, brush, flags, (red << 16) | (green << 8) | blue);
+				int fromU8 = readUnsignedByte(buffer);
+				int fromV8 = readUnsignedByte(buffer);
+				return new StampS2C(pos, face, u8, v8, brush, flags,
+					(red << 16) | (green << 8) | blue, fromU8, fromV8);
 			});
 
 		public boolean erase() {

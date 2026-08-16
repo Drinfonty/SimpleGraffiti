@@ -63,6 +63,16 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 	private InteractionHand sprayHand = InteractionHand.MAIN_HAND;
 	private boolean sprayErases;
 
+	// Where the last sample landed, so the next one can paint the segment between the two rather
+	// than a lone disc. Only valid while the crosshair stays on the same face of the same block:
+	// a stroke that wanders onto a different canvas has to start again, since a canvas cannot be
+	// painted from a point outside itself.
+	private boolean strokeAnchored;
+	private long strokePos;
+	private int strokeFace;
+	private int strokeU8;
+	private int strokeV8;
+
 	/** SPEC 10: the "this server does not have the mod" message is shown once per session. */
 	private boolean warnedNoServer;
 
@@ -128,6 +138,7 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		paintingEnabled = true;
 		warnedNoServer = false;
 		spraying = false;
+		strokeAnchored = false;
 		canvases.clear();
 	}
 
@@ -160,7 +171,10 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		Canvas before = existing == null ? Canvas.empty() : existing;
 		int value = stamp.erase() ? PaintColor.EMPTY : PaintColor.opaque(stamp.rgb());
 
-		Canvas updated = before.withStamp(stamp.u8(), stamp.v8(), stamp.brush(), value, null, 0L);
+		Canvas updated = stamp.stroke()
+			? before.withStroke(stamp.fromU8(), stamp.fromV8(), stamp.u8(), stamp.v8(),
+				stamp.brush(), value, null, 0L)
+			: before.withStamp(stamp.u8(), stamp.v8(), stamp.brush(), value, null, 0L);
 
 		// Null means nothing changed, which is the normal case for the painter replaying their own
 		// prediction. Idempotence is what makes that a no-op rather than a special case.
@@ -240,12 +254,17 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		sprayErases = erase;
 		sprayCooldown = SPRAY_INTERVAL_TICKS;
 
+		// A fresh press starts a fresh stroke; the previous one's end point must not be joined
+		// to it, or releasing and clicking elsewhere would draw a line across the gap.
+		strokeAnchored = false;
+
 		paint(pos, face, hit, hand, erase, wholeFace);
 	}
 
 	@Override
 	public void stopSpraying() {
 		spraying = false;
+		strokeAnchored = false;
 	}
 
 	/**
@@ -266,6 +285,7 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 
 		if (!client.options.keyUse.isDown()) {
 			spraying = false;
+			strokeAnchored = false;
 			return;
 		}
 
@@ -276,6 +296,9 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		sprayCooldown = SPRAY_INTERVAL_TICKS;
 
 		if (!(client.hitResult instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
+			// Off a block entirely: the stroke restarts when the crosshair comes back, rather than
+			// leaping across whatever the player swept over in between.
+			strokeAnchored = false;
 			return;
 		}
 
@@ -331,11 +354,30 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 			flags |= GraffitiPayloads.FLAG_WHOLE_FACE;
 		}
 
-		if (!sender.sendIfPossible(new GraffitiPayloads.PaintC2S(pos.asLong(), faceId, u8, v8, brush, flags))) {
+		// Continue the stroke only while still on the same canvas, and never for a whole-face wipe.
+		long packedPos = pos.asLong();
+		boolean continues = strokeAnchored && !wholeFace
+			&& strokePos == packedPos && strokeFace == faceId;
+
+		if (continues) {
+			flags |= GraffitiPayloads.FLAG_STROKE;
+		}
+
+		int fromU8 = continues ? strokeU8 : u8;
+		int fromV8 = continues ? strokeV8 : v8;
+
+		if (!sender.sendIfPossible(new GraffitiPayloads.PaintC2S(
+			packedPos, faceId, u8, v8, brush, flags, fromU8, fromV8))) {
 			return;
 		}
 
-		predict(pos, faceId, u8, v8, brush, erase, wholeFace,
+		strokeAnchored = !wholeFace;
+		strokePos = packedPos;
+		strokeFace = faceId;
+		strokeU8 = u8;
+		strokeV8 = v8;
+
+		predict(pos, faceId, fromU8, fromV8, u8, v8, brush, erase, wholeFace, continues,
 			erase ? PaintColor.EMPTY : PaintColor.opaque(SprayCanItem.colorOf(tool)));
 
 		if (!erase) {
@@ -371,13 +413,19 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 	}
 
 	/** Applies the stamp locally so paint appears at the painter's latency, not the server's. */
-	private void predict(BlockPos pos, int face, int u8, int v8, int brush,
-		boolean erase, boolean wholeFace, int value) {
+	private void predict(BlockPos pos, int face, int fromU8, int fromV8, int u8, int v8, int brush,
+		boolean erase, boolean wholeFace, boolean stroke, int value) {
 		Canvas existing = canvases.get(pos, face);
 		Canvas before = existing == null ? Canvas.empty() : existing;
-		Canvas updated = wholeFace
-			? before.cleared(null, 0L)
-			: before.withStamp(u8, v8, brush, value, null, 0L);
+		Canvas updated;
+
+		if (wholeFace) {
+			updated = before.cleared(null, 0L);
+		} else if (stroke) {
+			updated = before.withStroke(fromU8, fromV8, u8, v8, brush, value, null, 0L);
+		} else {
+			updated = before.withStamp(u8, v8, brush, value, null, 0L);
+		}
 
 		if (updated == null) {
 			return;

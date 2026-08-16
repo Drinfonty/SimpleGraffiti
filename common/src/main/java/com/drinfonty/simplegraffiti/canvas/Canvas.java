@@ -94,6 +94,23 @@ public final class Canvas {
 		return new Canvas(copy, painter, now);
 	}
 
+	/**
+	 * Applies a whole stroke to a <em>copy</em> of this canvas, from the previous sample point to
+	 * this one (SPEC 4.3).
+	 *
+	 * @return the new canvas, or {@code null} if nothing changed
+	 */
+	public Canvas withStroke(int fromU8, int fromV8, int u8, int v8, int size, int value,
+		UUID painter, long now) {
+		int[] copy = texels.clone();
+
+		if (!Brush.stampLine(copy, fromU8, fromV8, u8, v8, size, value)) {
+			return null;
+		}
+
+		return new Canvas(copy, painter, now);
+	}
+
 	/** Clears every texel. Returns null when the canvas was already blank. */
 	public Canvas cleared(UUID painter, long now) {
 		if (isEmpty()) {

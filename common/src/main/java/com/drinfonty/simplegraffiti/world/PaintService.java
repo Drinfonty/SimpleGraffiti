@@ -135,6 +135,11 @@ public final class PaintService {
 
 		if (request.wholeFace()) {
 			updated = before.cleared(player.getUUID(), now);
+		} else if (request.stroke()) {
+			// A held drag: paint the segment since the last sample, so the line is continuous
+			// rather than a row of discs spaced by however fast the player moved.
+			updated = before.withStroke(request.fromU8(), request.fromV8(),
+				request.u8(), request.v8(), brush, value, player.getUUID(), now);
 		} else {
 			updated = before.withStamp(request.u8(), request.v8(), brush, value, player.getUUID(), now);
 		}
@@ -171,7 +176,7 @@ public final class PaintService {
 		} else {
 			broadcast(server, level, chunkPos, new GraffitiPayloads.StampS2C(
 				request.pos(), request.face(), request.u8(), request.v8(), brush, request.flags(),
-				request.erase() ? 0 : PaintColor.rgb(value)));
+				request.erase() ? 0 : PaintColor.rgb(value), request.fromU8(), request.fromV8()));
 		}
 	}
 

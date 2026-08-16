@@ -247,8 +247,13 @@ sides, so:
   as a float — the network never carries a float that both sides then round differently.
 * Coverage is an **integer** comparison of squared distances; no `sqrt`, no float, no
   platform-dependent rounding.
-* Soft edges come from a fixed 4×4 Bayer dither threshold, not from alpha. Paint is either on
-  or off per texel, which is what keeps the renderer in the `CUTOUT` layer.
+* The brush is a solid disc: a texel is painted when its centre is inside the radius. Paint is
+  either on or off per texel, which is what keeps the renderer in the `CUTOUT` layer. (An earlier
+  Bayer-dithered edge was meant to read as soft spray falloff; in game it read as speckle, and it
+  made strokes dotty at the smallest size, so it was removed after playtesting.)
+* A held drag carries the previous sample point, and `Brush.stampLine` walks the segment one
+  quantisation unit at a time. Without that, a drag is only ever a row of discs spaced by how fast
+  the player moved — sampling on a timer cannot produce a line on its own.
 
 Because the same op replays identically everywhere, a spray costs **13 bytes on the wire**
 (§7) instead of a canvas diff, and prediction cannot drift from authority.
@@ -567,7 +572,8 @@ Copied from Checkbox, which encodes hard-won knowledge about this toolchain:
 here is most of the risky logic:
 
 * `Brush` determinism — the same op from the same inputs produces byte-identical canvases,
-  including the dither pattern and every brush size and edge case at the canvas border.
+  including every brush size and edge case at the canvas border, plus the invariant that a fast
+  drag paints byte-identically to an infinitely slow one.
 * `FaceAxes` — hit point → texel for all six faces, including the corners and the seams.
 * `CanvasCodec` — NBT and network round-trips, RLE of pathological canvases, and rejection of
   malformed input without throwing.
