@@ -1,0 +1,33 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+displayURL="https://github.com/Drinfonty/SimpleGraffiti"
+issueTrackerURL="https://github.com/Drinfonty/SimpleGraffiti/issues"
+license="CC0-1.0"
+
+[[mods]]
+modId="simple_graffiti"
+version="${modVersion}"
+displayName="Simple Graffiti"
+description='''
+Spray-paint 16x16 pixel graffiti onto any block face with a craftable spray can. Server-authoritative and saved with the world.
+
+This mod adds items, so a server running it requires it on clients, exactly as any content mod does. A client running it on a vanilla server simply does nothing.
+'''
+authors="Drinfonty"
+
+[[dependencies.simple_graffiti]]
+modId="neoforge"
+type="required"
+versionRange="[26.2.0,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.simple_graffiti]]
+modId="minecraft"
+type="required"
+versionRange="${minecraftDependency}"
+ordering="NONE"
+side="BOTH"
+
+[[mixins]]
+config="simple_graffiti.mixins.json"
