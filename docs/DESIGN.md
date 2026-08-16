@@ -268,7 +268,7 @@ Because the same op replays identically everywhere, a spray costs **13 bytes on 
 
 * `minecraft:dyed_color` — the **vanilla** component, an arbitrary RGB int. Using vanilla's
   rather than a custom one is what makes dye mixing, item tinting and the tooltip free.
-* charges — carried by vanilla `minecraft:damage` against `max_damage = 64`, so the vanilla
+* charges — carried by vanilla `minecraft:damage` against `max_damage = 128`, so the vanilla
   durability bar, the item tooltip and the "breaks when exhausted" plumbing all work for
   free. An exhausted can is **not** destroyed; it stops painting (an item that vanishes
   mid-mural would be infuriating), which is why `SprayCanItem` checks charges itself rather
@@ -626,7 +626,8 @@ APIs that are stable across 26.x and should move by cherry-pick.
 
 ## 13. Open questions
 
-* **Charges (64), cost (1 per spray) and sponge durability (128)** are unplaytested guesses. A
+* **Charges (128), the 250 ms drain interval and sponge durability (128)** are play-tested
+  guesses. A
   mural should feel like it costs something without becoming an inventory-management chore.
 * Should a can be craftable *pre-coloured* by including a dye in the recipe? The supplied
   recipe has no dye slot, so v1.0 crafts white and recolours afterwards.

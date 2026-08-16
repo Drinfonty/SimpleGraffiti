@@ -16,6 +16,12 @@ import com.google.gson.JsonSyntaxException;
 /**
  * {@code config/simple_graffiti/server.json} (SPEC 9.1).
  *
+ * <p>Deliberately holds no charge or durability setting. An item's maximum damage is fixed when
+ * the item is registered, before any world or config exists, and it has to match on the client, so
+ * a server-side number could not move it. Both fields used to sit here being validated and never
+ * read - a knob that silently does nothing is worse than no knob. Charges are
+ * {@code GraffitiItems.DEFAULT_CHARGES}; how fast they drain is SPEC 5.2's timer.
+ *
  * <p>Loading tolerates a missing file, an empty file, malformed JSON, unknown fields and
  * out-of-range values: every invalid field falls back to its default and the file is rewritten. A
  * corrupt config must never stop a server starting - an operator who typos a number should get a
@@ -41,8 +47,6 @@ public final class ServerConfig {
 	public int maxCanvasesPerChunk = 1024;
 	public int maxBrushSize = Brush.MAX_SIZE;
 	public boolean restrictToTag = false;
-	public int chargesPerCan = 64;
-	public int spongeDurability = 128;
 	public boolean allowErase = true;
 	public boolean clearOnBlockBreak = true;
 
@@ -110,16 +114,6 @@ public final class ServerConfig {
 
 		if (!Brush.isValidSize(maxBrushSize)) {
 			maxBrushSize = defaults.maxBrushSize;
-			repaired = true;
-		}
-
-		if (chargesPerCan < 1 || chargesPerCan > 32767) {
-			chargesPerCan = defaults.chargesPerCan;
-			repaired = true;
-		}
-
-		if (spongeDurability < 1 || spongeDurability > 32767) {
-			spongeDurability = defaults.spongeDurability;
 			repaired = true;
 		}
 

@@ -51,7 +51,7 @@ same blue as blue wool.
 
 ## 3. Items
 
-`simple_graffiti:spray_can`. Stack size 1. `max_damage = 64`. Not enchantable, not repairable
+`simple_graffiti:spray_can`. Stack size 1. `max_damage = 128`. Not enchantable, not repairable
 in an anvil, no `minecraft:tool` component.
 
 **Components**
@@ -59,7 +59,7 @@ in an anvil, no `minecraft:tool` component.
 | Component | Type | Default | Meaning |
 | :--- | :--- | :--- | :--- |
 | `minecraft:dyed_color` | `DyedItemColor` (RGB int) | white (`0xFFFFFF`) | The colour sprayed |
-| `minecraft:damage` | int | `0` | Charges used; remaining charges = `64 − damage` |
+| `minecraft:damage` | int | `0` | Charges used; remaining charges = `128 − damage` |
 
 Colour uses the **vanilla** `minecraft:dyed_color` component rather than a custom one, which
 buys three things for free: dye mixing through a vanilla-style recipe, item tinting with the
@@ -68,7 +68,7 @@ buys three things for free: dye mixing through a vanilla-style recipe, item tint
 * A can at 0 remaining charges MUST NOT be destroyed and MUST NOT paint. It MUST show the
   action-bar message `message.simple_graffiti.empty` when used.
 * In creative mode, charges MUST NOT be consumed.
-* The tooltip MUST show `charges/64` in addition to the vanilla dyed-colour line.
+* The tooltip MUST show `charges/128` in addition to the vanilla dyed-colour line.
 * The item model MUST be a single model whose paint layer is tinted by the
   `minecraft:dye` tint source, so any RGB value renders with no extra assets.
 
@@ -295,7 +295,7 @@ optional `message.simple_graffiti.not_paintable` action bar (rate-limited to one
   less often makes the painted line trail behind the crosshair by however far the mouse moved
   since the last sample, which reads as lag even though the line is continuous.
 * Charge MUST drain on a **timer — one per 250 ms of spraying** — not once per sample, so a full
-  can is always about sixteen seconds of continuous paint regardless of the sample rate. This is
+  can is always about thirty-two seconds of continuous paint regardless of the sample rate. This is
   also what stops a client that samples slowly from painting the same wall for fewer charges.
 * Sneak-use with a can MUST pick colour (§5.3), never paint and never erase. Erasing is the
   scrub sponge's job (§3.3), so no interaction is ambiguous.
@@ -545,8 +545,6 @@ written through `SimpleRegionStorage` with `RegionStorageInfo(levelId, dimension
   "maxCanvasesPerChunk": 1024,
   "maxBrushSize": 2,
   "restrictToTag": false,
-  "chargesPerCan": 64,
-  "spongeDurability": 128,
   "allowErase": true,
   "clearOnBlockBreak": true
 }
@@ -558,7 +556,11 @@ written through `SimpleRegionStorage` with `RegionStorageInfo(levelId, dimension
 * Loading MUST tolerate a missing file, empty file, malformed JSON, unknown fields and
   out-of-range values; each invalid field falls back to its default and the file is
   rewritten. A corrupt config MUST NOT prevent the server from starting.
-* Changes take effect on `/graffiti reload`; `enabled = false` MUST stop all painting and all
+* There is deliberately no charge or sponge-durability setting: an item's maximum damage is fixed
+when the item is registered, before any config exists, and must match on the client, so a
+server-side value could not move it. Charges are a mod constant (128).
+
+Changes take effect on `/graffiti reload`; `enabled = false` MUST stop all painting and all
   sync immediately, leaving stored canvases untouched.
 
 ### 9.2 Rate limiting
@@ -682,7 +684,7 @@ run (`:fabric:runServer`, `:neoforge:runServer`) plus at least two clients.
 
 **Painting**
 
-1. Craft the can from the supplied recipe; the bucket is returned; the can is white with 64
+1. Craft the can from the supplied recipe; the bucket is returned; the can is white with 128
    charges.
 2. Paint a legible mark on a stone wall in survival; charges decrease by one per stamp;
    holding use draws a continuous line at 4 stamps/second.

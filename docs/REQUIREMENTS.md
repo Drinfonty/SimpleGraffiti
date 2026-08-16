@@ -291,8 +291,8 @@ gates are:
 
 ## 8. Open questions
 
-- **Charges per can (64) and per-spray cost (1)** are first guesses; they need play-testing
-  against how much paint a mural actually takes.
+- **Charges per can (128)** and the 250 ms drain interval are play-tested guesses: a full can is
+  about 32 seconds of continuous spraying.
 - Scrub sponge durability (128 uses) and its recipe are first guesses.
 - Per-texel RGBA costs 1 KB per painted face against 256 B for a 16-colour palette. If painted
   worlds turn out heavier than expected, a per-canvas palette (256 indices + up to 16 RGB

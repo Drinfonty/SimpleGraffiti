@@ -25,8 +25,8 @@ public final class GraffitiItems {
 	public static final Identifier SPRAY_CAN_ID = SimpleGraffiti.id("spray_can");
 	public static final Identifier SCRUB_SPONGE_ID = SimpleGraffiti.id("scrub_sponge");
 
-	/** SPEC 3: 64 charges, and SPEC 3.3: 128 scrubs. */
-	public static final int DEFAULT_CHARGES = 64;
+	/** SPEC 3: 128 charges - about 32 seconds of continuous spraying, and SPEC 3.3: 128 scrubs. */
+	public static final int DEFAULT_CHARGES = 128;
 	public static final int DEFAULT_SPONGE_DURABILITY = 128;
 
 	public static Item sprayCan;
