@@ -70,8 +70,11 @@ from memory. They drive most of the architecture.
 | Fact | Consequence |
 | :--- | :--- |
 | Vanilla `BlockStateModel.collectParts(RandomSource, List<BlockStateModelPart>)` receives **no `BlockPos`** | A mappings-only model wrapper in `:common` cannot know which block it is drawing. Position-aware emission is the one thing that must be per-loader ([§6](#6-rendering)) |
-| Fabric: `WrapperBlockStateModel.emitQuads(QuadEmitter, BlockAndTintGetter, BlockPos, BlockState, RandomSource, Predicate<Direction>)` + `createGeometryKey(…)`, installed via `ModelLoadingPlugin.Context.modifyBlockModelAfterBake()` | Graffiti is emitted through FRAPI as part of the block's own model, with a cache key so position-dependent geometry is not rebuilt needlessly |
+| Fabric: `WrapperBlockStateModel.emitQuads(QuadEmitter, BlockAndTintGetter, BlockPos, BlockState, RandomSource, Predicate<Direction>)` + `createGeometryKey(…)`, installed via `ModelLoadingPlugin.Context.modifyBlockModelAfterBake()` (packages `…api.client.model.loading.v1.wrapper` and `…api.client.renderer.v1.mesh`) | Graffiti is emitted through FRAPI as part of the block's own model, with a cache key so position-dependent geometry is not rebuilt needlessly |
 | NeoForge: `DynamicBlockStateModel.collectParts(BlockAndTintGetter, BlockPos, BlockState, RandomSource, List<BlockStateModelPart>)`, installed via `ModelEvent.ModifyBakingResult`; `BlockStateModelPart.getQuads(Direction)` returns `List<BakedQuad>`; `BakedQuad` is a record of four positions, packed UVs, a direction and `MaterialInfo` | Same idea, different shape: we append one part whose quads are built at runtime from the canvas and cached |
+| A vanilla `BakedQuad` carries **no vertex colour** — colour comes from a tint index resolved by a per-block `BlockTintSource`, which is given only `(state, level, pos)`. NeoForge's `MutableQuad.setColor(int).toBakedQuad()` does carry one | The NeoForge adapter must use vertex colour. A tint index cannot express 256 arbitrary colours on one block, because the tint source does not know which face or texel it is colouring |
+| `BlockStateModel.materialFlags()` is a bitmask of `FLAG_TRANSLUCENT` and `FLAG_ANIMATED` only — **not** a per-`ChunkSectionLayer` mask | Opaque, unanimated paint contributes no flags, so neither adapter overrides it. The cutout layer is selected per quad instead |
+| 26.2 replaced numeric op levels with named permissions: `Player.permissions()` returns a `PermissionSet`, and `Permissions.COMMANDS_GAMEMASTER` is the old level 2 | `OPS_ONLY` and the `/graffiti` permission check are written against the named permission |
 | Both APIs are **public and supported**, and both feed the standard model pipeline | Chunk-meshing replacement mods (Sodium class) consume the same pipeline, so paint stays visible under them ([§6.4](#64-compatibility-with-rendering-mods)) |
 | `ChunkSectionLayer` is now an enum of `SOLID`, `CUTOUT`, `TRANSLUCENT` with `pipeline()`/`vertexFormat()` | Paint is emitted with cutout material flags: alpha-tested, unsorted, no translucency cost |
 | `ClientLevel.setSectionDirtyWithNeighbors(int,int,int)` is public | Canvas changes trigger a remesh with no mixin |
@@ -221,8 +224,11 @@ is what keeps rendering in the cutout layer. Canvases are **replaced, not mutate
 copies, stamps, and swaps the reference in the owning map. That is what makes it safe for
 the client's chunk-mesher threads to read a canvas without locking — see [§6.2](#62-thread-safety).
 
-`CanvasKey` packs `(BlockPos, Direction)` into a single `long` (26 bits X, 12 bits Y, 26 bits
-Z, 3 bits face) so canvases live in a `Long2ObjectMap` with no allocation per lookup.
+`CanvasKey` packs a canvas address into a single `long` so canvases live in a `Long2ObjectMap`
+with no allocation per lookup. The key is **chunk-local** — 3 bits face, 4 bits local Z, 4 bits
+local X, then the full signed Y — because a world-absolute key does not fit: vanilla's own
+`BlockPos` packing already uses all 64 bits (26 X + 12 Y + 26 Z), so there is no room for a face.
+Every caller addresses a canvas relative to the `ChunkCanvases` that owns it, so nothing is lost.
 
 **Face-local coordinates.** Each `Direction` gets a fixed (u, v) basis in `FaceAxes`, chosen so
 that "up on the screen is up on the wall" for the four side faces, and so the mapping is the
@@ -266,10 +272,12 @@ concrete payoff of storing colour in the vanilla component.
 **Colour and charge are changed by separate recipes** ([SPEC §3.2](SPEC.md#32-refilling-and-recolouring)),
 so a player never has to spend one to get the other:
 
-* *Recolour* is a single `minecraft:dye` recipe. 26.2's `DyeRecipe` is data-driven — a
+* *Recolour* is a single `minecraft:crafting_dye` recipe. 26.2's `DyeRecipe` is data-driven — a
   `target` ingredient, a `dye` ingredient and a result — not hardcoded to armour, so one JSON
   gives the can leather-armour dye mixing through `DyedItemColor.applyDyes`. Arbitrary colours
-  are therefore reachable in survival, at a crafting table, without any UI at all.
+  are therefore reachable in survival, at a crafting table, without any UI at all. (The
+  serializer id is `crafting_dye`; a plain `minecraft:dye` is rejected at data load. The *tint
+  source* on the item model is separately named `minecraft:dye`, which is an easy confusion.)
 * *Refill* is `minecraft:crafting_transmute` with magma cream, matching the pressurised-can
   fiction of the crafting recipe, and preserves the colour.
 
@@ -513,7 +521,9 @@ Painting is a build action, so it must be governable like one.
 * **Tags** — `#simple_graffiti:paintable` and `#simple_graffiti:not_paintable` let a pack
   restrict surfaces without code.
 * **Commands** — `/graffiti clear <radius>`, `/graffiti clear player <name>`,
-  `/graffiti stats`, `/graffiti reload`, `/graffiti enable|disable` (op level 2). The
+  `/graffiti stats`, `/graffiti reload`, `/graffiti enable|disable` (the `COMMANDS_GAMEMASTER`
+  permission — 26.2 replaced numeric op levels with named permissions, and that is the old
+  level 2). The
   per-canvas owner UUID exists precisely so `clear player` can work after the fact.
 
 Config is `config/simple_graffiti/server.json`, Gson, field-by-field repair on load, the same

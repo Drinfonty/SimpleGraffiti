@@ -108,8 +108,9 @@ Shipped verbatim as supplied, at `data/simple_graffiti/recipe/spray_can.json`:
 Colour and charge are changed by **separate** recipes, so neither is ever traded for the
 other.
 
-* **Recolour** — one `minecraft:dye` recipe at `data/simple_graffiti/recipe/spray_can_dye.json`
-  with `target = simple_graffiti:spray_can` and `dye = #minecraft:dyes`. 26.2's `DyeRecipe` is
+* **Recolour** — one `minecraft:crafting_dye` recipe at
+  `data/simple_graffiti/recipe/spray_can_dye.json` with `target = simple_graffiti:spray_can`,
+  `dye = #minecraft:dyes` and an object-shaped `result`. 26.2's `DyeRecipe` is
   data-driven (`target`, `dye`, `result` — it is not hardcoded to armour), so mixing several
   dyes MUST blend exactly as it does for leather armour, via `DyedItemColor.applyDyes`. This
   is how arbitrary colours are reached without a UI.
