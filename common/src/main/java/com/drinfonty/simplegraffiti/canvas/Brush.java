@@ -59,19 +59,35 @@ public final class Brush {
 	 * @param value  0xFF_RR_GG_BB to paint, or 0 to erase
 	 */
 	public static boolean stamp(int[] texels, int u8, int v8, int size, int value) {
-		if (texels.length != Canvas.TEXELS) {
-			throw new IllegalArgumentException("canvas must be " + Canvas.TEXELS + " texels");
-		}
-
 		if (u8 < 0 || u8 > 255 || v8 < 0 || v8 > 255) {
 			throw new IllegalArgumentException("hit point out of range: " + u8 + "," + v8);
+		}
+
+		return stampOffCanvas(texels, u8, v8, size, value);
+	}
+
+	/**
+	 * Stamps with a centre expressed relative to this canvas that may lie <em>outside</em> it.
+	 *
+	 * <p>This is what lets a spray land near a block's edge and still mark the neighbouring block:
+	 * the same disc is stamped into each block it overlaps, with the centre expressed relative to
+	 * that block, so the part that falls inside gets painted. Clipping the disc at the block
+	 * boundary instead made spraying a corner mark only the one face aimed at, with the paint
+	 * visibly sliced off along the seam.
+	 *
+	 * <p>Centres far outside simply paint nothing, since no texel centre is within the radius.
+	 */
+	public static boolean stampOffCanvas(int[] texels, int u8, int v8, int size, int value) {
+		if (texels.length != Canvas.TEXELS) {
+			throw new IllegalArgumentException("canvas must be " + Canvas.TEXELS + " texels");
 		}
 
 		int r = radius(size);
 		int rr = r * r;
 
-		// Texels outside 0..15 are clipped rather than wrapped, so paint never spills onto an
-		// adjacent face or block (SPEC 4.3).
+		// Clamped to this canvas: the caller is responsible for stamping the same disc into any
+		// neighbouring block it overlaps. Texels are never wrapped, so paint cannot appear on the
+		// opposite edge of the same face.
 		int minV = clampTexel(Math.floorDiv(v8 - r, 16));
 		int maxV = clampTexel(Math.floorDiv(v8 + r, 16));
 		int minU = clampTexel(Math.floorDiv(u8 - r, 16));

@@ -210,6 +210,10 @@ for pv in clamp(floor((v8 - r) / 16), 0, 15) .. clamp(floor((v8 + r) / 16), 0, 1
 At the small size this paints 2×2 texels when aimed at a texel corner and 3×3 when aimed at a
 texel centre; medium is 4×4–5×5 and large is an 8-wide disc.
 
+> **Changed after playtesting.** Clipping a disc at the block boundary was the original rule. It
+> made spraying a corner mark only the face aimed at, with the paint visibly sliced along the seam,
+> so a disc now bleeds onto the coplanar neighbours it overlaps.
+>
 > **Changed after playtesting.** The brush originally dithered its edge with a 4×4 Bayer
 > threshold, intended as a soft spray falloff. In game it read as *speckly* rather than soft, and
 > at the small size it made drags visibly dotty, because a dithered texel is only reached when a
@@ -218,8 +222,12 @@ texel centre; medium is 4×4–5×5 and large is an 8-wide disc.
 
 * The result MUST be bit-identical on client and server for identical inputs. No
   floating-point arithmetic is permitted anywhere in this function.
-* Paint MUST NOT spill onto adjacent faces or adjacent blocks: texels outside `0..15` are
-  clipped, not wrapped.
+* A disc MUST be stamped into **every block face it overlaps** on the same plane, with its centre
+  expressed relative to each. Spraying a seam marks both blocks; spraying the corner where four
+  blocks meet marks all four, and the paint either side adds up to the same disc a spray in open
+  canvas produces.
+* Paint MUST NOT wrap: texels outside `0..15` are clipped, never folded onto the opposite edge of
+  the same face, and paint never crosses onto a face pointing a different way (FR-PAINT-8).
 * Erasing uses `value = 0` and is otherwise identical, so an erase covers exactly what a paint
   stroke of the same size and path would have covered.
 * A stamp that changes no texel MUST NOT consume a charge and MUST NOT be broadcast.

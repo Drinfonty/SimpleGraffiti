@@ -171,29 +171,16 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		BlockPos pos = BlockPos.of(stamp.pos());
 		int value = stamp.erase() ? PaintColor.EMPTY : PaintColor.opaque(stamp.rgb());
 
-		if (stamp.stroke()) {
-			// Replaying our own broadcast is a no-op, because the walk is deterministic and
-			// stamping the same texels the same colour changes nothing.
-			StrokeApplier.apply(stamp.face(), BlockPos.of(stamp.fromPos()), stamp.fromU8(), stamp.fromV8(),
-				pos, stamp.u8(), stamp.v8(), stamp.brush(), value, null, 0L, clientAccess());
-			return;
-		}
+		// Always the shared applier, stroke or not: an observer replaying a stamp must reproduce
+		// exactly what the painter predicted, bleed onto neighbouring blocks included. Replaying
+		// our own broadcast is a no-op, because the walk is deterministic and stamping the same
+		// texels the same colour changes nothing.
+		BlockPos from = stamp.stroke() ? BlockPos.of(stamp.fromPos()) : pos;
+		int fromU8 = stamp.stroke() ? stamp.fromU8() : stamp.u8();
+		int fromV8 = stamp.stroke() ? stamp.fromV8() : stamp.v8();
 
-		Canvas existing = canvases.get(pos, stamp.face());
-		Canvas before = existing == null ? Canvas.empty() : existing;
-		Canvas updated = before.withStamp(stamp.u8(), stamp.v8(), stamp.brush(), value, null, 0L);
-
-		if (updated == null) {
-			return;
-		}
-
-		if (updated.isEmpty()) {
-			canvases.remove(pos, stamp.face());
-		} else {
-			canvases.put(pos, stamp.face(), updated);
-		}
-
-		markDirty(pos);
+		StrokeApplier.apply(stamp.face(), from, fromU8, fromV8, pos, stamp.u8(), stamp.v8(),
+			stamp.brush(), value, null, 0L, clientAccess());
 	}
 
 	public void onCanvasSync(GraffitiPayloads.CanvasSyncS2C sync) {
@@ -254,13 +241,22 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 			return;
 		}
 
+		// Vanilla repeats useOn every four ticks for as long as use is held, so this fires
+		// continuously during a drag - not once per press. Treating each call as a new press
+		// reset the stroke anchor just before nearly every stamp, which is what made a held
+		// drag come out as disconnected blobs however well the stroke maths worked. While a
+		// spray is already running the tick loop owns both the cadence and the anchor.
+		if (spraying && !wholeFace) {
+			return;
+		}
+
 		spraying = !wholeFace;
 		sprayHand = hand;
 		sprayErases = erase;
 		sprayCooldown = SPRAY_INTERVAL_TICKS;
 
-		// A fresh press starts a fresh stroke; the previous one's end point must not be joined
-		// to it, or releasing and clicking elsewhere would draw a line across the gap.
+		// A genuinely new press starts a fresh stroke; the previous one's end point must not be
+		// joined to it, or clicking elsewhere would draw a line across the gap.
 		strokeAnchored = false;
 
 		paint(pos, face, hit, hand, erase, wholeFace);

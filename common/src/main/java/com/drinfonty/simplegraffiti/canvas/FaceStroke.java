@@ -118,6 +118,16 @@ public final class FaceStroke {
 		return Math.floorMod(global, UNITS_PER_BLOCK);
 	}
 
+	/** The block containing a global u coordinate. */
+	public static int blockOfU(int face, int globalU) {
+		return decodeBlock(globalU, uInverted(face));
+	}
+
+	/** The block containing a global v coordinate. */
+	public static int blockOfV(int face, int globalV) {
+		return decodeBlock(globalV, vInverted(face));
+	}
+
 	public static int encodeU(int face, int blockCoord, int u8) {
 		return encode(blockCoord, u8, uInverted(face));
 	}

@@ -127,8 +127,10 @@ Design pillars, in priority order:
 - **FR-PAINT-6 [M1]** Breaking a block removes all paint on that block. Paint is not dropped
   and is not recoverable.
 - **FR-PAINT-7 [M1]** Painting over existing paint replaces the colour of the pixels covered.
-- **FR-PAINT-8 [M1]** Paint applies to exactly one face; it does not wrap around corners, and
-  spraying at a corner affects only the face aimed at.
+- **FR-PAINT-8 [M1]** Paint does not wrap around a corner onto a face pointing a different way.
+  It does spread onto **coplanar neighbours**: a spray near a block's edge marks the next block
+  along, and a spray on the corner where four blocks meet marks all four, because a spray can does
+  not stop at a seam the player cannot see.
 - **FR-PAINT-9 [M1]** Painting obeys the player's reach and the server's rate limit; a
   rejected paint is corrected on the client, not left as a ghost.
 
