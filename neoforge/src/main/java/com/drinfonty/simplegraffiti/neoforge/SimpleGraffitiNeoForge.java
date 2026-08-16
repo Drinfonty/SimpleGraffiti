@@ -58,9 +58,9 @@ public class SimpleGraffitiNeoForge {
 	};
 
 	public SimpleGraffitiNeoForge(IEventBus modBus) {
-		// The deferred register cannot construct items itself, so the shared definitions build
-		// them and the register merely holds them - same items on both loaders, by construction.
-		GraffitiItems.register((id, item) -> ITEMS.register(id.getPath(), () -> item));
+		// The factory is invoked by the deferred register during the registry event, not here:
+		// constructing an Item at mod-construction time throws "Registry is already frozen".
+		GraffitiItems.register((id, factory) -> ITEMS.register(id.getPath(), factory::get));
 		ITEMS.register(modBus);
 
 		modBus.addListener(RegisterPayloadHandlersEvent.class, SimpleGraffitiNeoForge::registerPayloads);

@@ -49,9 +49,10 @@ public class SimpleGraffitiFabric implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
-		GraffitiItems.register((id, item) ->
+		// Fabric's registry is open at init, so the factory is invoked immediately.
+		GraffitiItems.register((id, factory) ->
 			net.minecraft.core.Registry.register(BuiltInRegistries.ITEM,
-				ResourceKey.create(Registries.ITEM, id), item));
+				ResourceKey.create(Registries.ITEM, id), factory.get()));
 
 		registerPayloads();
 		registerReceivers();
