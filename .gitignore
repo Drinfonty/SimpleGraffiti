@@ -1,0 +1,44 @@
+# Gradle
+.gradle/
+build/
+out/
+classes/
+local.properties
+
+# Eclipse
+*.launch
+.settings/
+.classpath
+.project
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VSCode
+.vscode/
+bin/
+
+# macOS
+*.DS_Store
+
+# Fabric
+run/
+
+# -PtestJar isolated run directories
+run-testjar/
+run-prod/
+
+# Log4j output from test runs and dev clients
+logs/
+
+# Java / Crash logs
+hs_err_*.log
+replay_*.log
+*.hprof
+*.jfr
+
+# Output Releases
+/release/*.jar
