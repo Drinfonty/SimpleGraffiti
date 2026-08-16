@@ -1,0 +1,144 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'com.modrinth.minotaur'
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"simple_graffiti" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+			sourceSet project(":common").sourceSets.main
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	implementation project(":common")
+}
+
+processResources {
+	def version = project.version
+	def minecraftDependency = project.minecraft_dependency
+	inputs.property "version", version
+	inputs.property "minecraftDependency", minecraftDependency
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version, "minecraftDependency": minecraftDependency
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	withSourcesJar()
+
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+jar {
+	archiveFileName = "simple-graffiti-${project.mod_version}-${project.mc_version_suffix}-fabric.jar"
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from project(":common").sourceSets.main.output
+
+	// LICENSE lives at the repo root; a bare "LICENSE" resolves against the subproject
+	// directory, so this would silently package nothing.
+	from(rootProject.file("LICENSE")) {
+		rename { "${it}_$projectName"}
+	}
+}
+
+// Automatically deploy built jar to Minecraft mods directory
+tasks.register('copyJarToMods', Copy) {
+	from tasks.named('jar')
+	into "/home/ptphong/.minecraft/mods"
+
+	doFirst {
+		fileTree("/home/ptphong/.minecraft/mods").matching {
+			include "simple-graffiti-*.jar"
+		}.each { file ->
+			delete file
+		}
+	}
+
+	mustRunAfter tasks.named('jar')
+}
+
+// Automatically copy built jar to release directory in the project root
+tasks.register('copyJarToRelease', Copy) {
+	from tasks.named('jar')
+	into "${project.rootDir}/release"
+
+	mustRunAfter tasks.named('jar')
+}
+
+tasks.named('build') {
+	finalizedBy('copyJarToMods', 'copyJarToRelease')
+}
+
+afterEvaluate {
+	// Both runs get the same treatment: unlike Checkbox this mod has a server side, so the
+	// dedicated-server run is part of verification, not an afterthought.
+	['runClient', 'runServer'].each { runName ->
+		tasks.named(runName) {
+			if (project.hasProperty('testJar')) {
+				dependsOn(tasks.named('jar'))
+				// Filter Loom's own run classpath rather than rebuilding it from
+				// runtimeClasspath - setClasspath(files()) drops the entries Loom adds for
+				// the run (natives, log config, the game jar) that runtimeClasspath does not
+				// carry. Removing the loose output directories leaves the jar as the only
+				// source of the mod.
+				setClasspath(classpath.filter { File file ->
+					!file.path.contains("common/build/classes") &&
+					!file.path.contains("common/build/resources") &&
+					!file.path.contains("fabric/build/classes") &&
+					!file.path.contains("fabric/build/resources")
+				})
+				classpath.from(tasks.named('jar'))
+			} else {
+				// Verbose diagnostics for development only. Deliberately not set under
+				// -PtestJar, so that run stays a faithful rehearsal of what a player sees.
+				systemProperty 'simple_graffiti.debug', 'true'
+			}
+		}
+	}
+}
+
+if (rootProject.hasModrinthProject()) {
+	modrinth {
+		token = rootProject.getModrinthToken()
+		projectId = rootProject.modrinth_project_id
+
+		// ./gradlew modrinth -PmodrinthDebug validates the release and prints what would
+		// be sent, without uploading, so a publish can be rehearsed. Gated on a property
+		// rather than a hardcoded true so it cannot be left switched on by accident.
+		debugMode = project.hasProperty('modrinthDebug')
+		versionNumber = "${project.mod_version}-${project.mc_version_suffix}-fabric"
+		versionName = "Simple Graffiti ${project.mod_version} (Fabric)"
+		versionType = "release"
+		uploadFile = layout.buildDirectory.file("libs/simple-graffiti-${project.mod_version}-${project.mc_version_suffix}-fabric.jar")
+		gameVersions = rootProject.modrinth_game_versions.split(",") as List
+		loaders = ["fabric"]
+
+		def notesFile = rootProject.file("release/release-note-${project.mod_version}.md")
+		if (notesFile.exists()) {
+			changelog = notesFile.text
+		}
+
+		dependencies {
+			required.project "P7dR8mSH" // Fabric API
+		}
+	}
+}

@@ -1,0 +1,169 @@
+plugins {
+	id 'net.neoforged.moddev' version '2.0.143'
+	id 'com.modrinth.minotaur'
+}
+
+// -PtestJar must load the mod from the packaged jar and nothing else.
+def isTestJar = project.hasProperty('testJar')
+
+neoForge {
+	version = "${project.neoforge_version}"
+
+	runs {
+		client {
+			client()
+
+			// A separate game directory so the packaged jar in mods/ is the only copy
+			// present, and so it never pollutes the normal dev run directory.
+			if (isTestJar) {
+				gameDirectory = project.file('run-testjar')
+			} else {
+				// Verbose diagnostics for development only. Deliberately not set under
+				// -PtestJar, so that run stays a faithful rehearsal of what a player sees.
+				systemProperty 'simple_graffiti.debug', 'true'
+			}
+		}
+
+		// Unlike Checkbox this mod has a server side, and singleplayer alone cannot
+		// exercise the degradation paths, the chunk-send hook or the broadcast path.
+		server {
+			server()
+
+			if (isTestJar) {
+				gameDirectory = project.file('run-testjar-server')
+			} else {
+				systemProperty 'simple_graffiti.debug', 'true'
+			}
+		}
+	}
+
+	// Declaring the source sets here makes ModDev hand them to FML's in-dev folder
+	// locator, which wins over a jar in mods/ - FML reports "Found 2 mod files for modid
+	// simple_graffiti" and then loads the loose build/classes folders. That makes
+	// -PtestJar silently test the dev classes rather than the artifact being published.
+	if (!isTestJar) {
+		mods {
+			simple_graffiti {
+				sourceSet sourceSets.main
+				sourceSet project(":common").sourceSets.main
+			}
+		}
+	}
+}
+
+// Stage the packaged jar as the only mod in the -PtestJar run directories.
+tasks.register('installTestJar', Copy) {
+	from tasks.named('jar')
+	into layout.projectDirectory.dir('run-testjar/mods')
+
+	doFirst {
+		delete fileTree(layout.projectDirectory.dir('run-testjar/mods')) {
+			include 'simple-graffiti-*.jar'
+		}
+	}
+}
+
+tasks.register('installTestJarServer', Copy) {
+	from tasks.named('jar')
+	into layout.projectDirectory.dir('run-testjar-server/mods')
+
+	doFirst {
+		delete fileTree(layout.projectDirectory.dir('run-testjar-server/mods')) {
+			include 'simple-graffiti-*.jar'
+		}
+	}
+}
+
+dependencies {
+	implementation project(":common")
+}
+
+processResources {
+	def modVersion = project.mod_version
+	def minecraftDependency = project.minecraft_dependency
+	inputs.property "modVersion", modVersion
+	inputs.property "minecraftDependency", minecraftDependency
+
+	filesMatching("META-INF/neoforge.mods.toml") {
+		expand "modVersion": modVersion, "minecraftDependency": minecraftDependency
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	withSourcesJar()
+
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+jar {
+	archiveFileName = "simple-graffiti-${project.mod_version}-${project.mc_version_suffix}-neoforge.jar"
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from project(":common").sourceSets.main.output
+
+	// LICENSE lives at the repo root; a bare "LICENSE" resolves against the subproject
+	// directory, so this would silently package nothing.
+	from(rootProject.file("LICENSE")) {
+		rename { "${it}_$projectName"}
+	}
+}
+
+// Automatically copy built jar to release directory in the project root
+tasks.register('copyJarToRelease', Copy) {
+	from tasks.named('jar')
+	into "${project.rootDir}/release"
+
+	mustRunAfter tasks.named('jar')
+}
+
+tasks.named('build') {
+	finalizedBy('copyJarToRelease')
+}
+
+afterEvaluate {
+	[['runClient', 'installTestJar'], ['runServer', 'installTestJarServer']].each { runName, installName ->
+		tasks.named(runName) {
+			if (isTestJar) {
+				dependsOn(tasks.named(installName))
+				// Keep the loose classes off the JVM classpath too, so nothing can be
+				// resolved from them behind FML's back. The jar is loaded from mods/.
+				setClasspath(classpath.filter { File file ->
+					!file.path.contains("common/build/classes") &&
+					!file.path.contains("common/build/resources") &&
+					!file.path.contains("neoforge/build/classes") &&
+					!file.path.contains("neoforge/build/resources")
+				})
+			}
+		}
+	}
+}
+
+if (rootProject.hasModrinthProject()) {
+	modrinth {
+		token = rootProject.getModrinthToken()
+		projectId = rootProject.modrinth_project_id
+
+		// ./gradlew modrinth -PmodrinthDebug validates the release and prints what would
+		// be sent, without uploading, so a publish can be rehearsed. Gated on a property
+		// rather than a hardcoded true so it cannot be left switched on by accident.
+		debugMode = project.hasProperty('modrinthDebug')
+		versionNumber = "${project.mod_version}-${project.mc_version_suffix}-neoforge"
+		versionName = "Simple Graffiti ${project.mod_version} (NeoForge)"
+		versionType = "release"
+		uploadFile = layout.buildDirectory.file("libs/simple-graffiti-${project.mod_version}-${project.mc_version_suffix}-neoforge.jar")
+		gameVersions = rootProject.modrinth_game_versions.split(",") as List
+		loaders = ["neoforge"]
+
+		def notesFile = rootProject.file("release/release-note-${project.mod_version}.md")
+		if (notesFile.exists()) {
+			changelog = notesFile.text
+		}
+	}
+}
