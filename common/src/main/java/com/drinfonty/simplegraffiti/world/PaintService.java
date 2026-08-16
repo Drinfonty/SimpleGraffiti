@@ -45,6 +45,12 @@ public final class PaintService {
 	/** SPEC 6.2: corrections are capped so a rejection storm cannot become an outbound flood. */
 	private static final long CORRECTION_INTERVAL_MILLIS = 250L;
 
+	/**
+	 * One charge per quarter second of spraying (SPEC 5.2), independent of how often the client
+	 * samples - so a full can is always about sixteen seconds of continuous paint.
+	 */
+	private static final long CHARGE_INTERVAL_MILLIS = 250L;
+
 	private PaintService() {
 	}
 
@@ -165,7 +171,9 @@ public final class PaintService {
 
 		Canvas updated = chunk.get(key);
 
-		spendTool(player, tool, hand, creative, request.erase());
+		if (server.tryConsumeCharge(player.getUUID(), now, CHARGE_INTERVAL_MILLIS)) {
+			spendTool(player, tool, hand, creative, request.erase());
+		}
 
 		if (request.erase()) {
 			level.playSound(null, pos, SoundEvents.SPONGE_ABSORB, SoundSource.PLAYERS, 0.4F, 1.0F);

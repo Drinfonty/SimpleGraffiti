@@ -290,13 +290,18 @@ optional `message.simple_graffiti.not_paintable` action bar (rate-limited to one
 
 * Use (right-click) on a paintable face applies one stamp of the can's colour at the hit
   point, and consumes one charge.
-* Holding use MUST repeat every **5 ticks** (4 sprays/second) for as long as use is held and
-  the crosshair is on a paintable face, consuming one charge per stamp.
+* Holding use MUST sample the crosshair **every tick** for as long as use is held and the
+  crosshair is on a paintable face, painting the stroke from the previous sample (§4.4). Sampling
+  less often makes the painted line trail behind the crosshair by however far the mouse moved
+  since the last sample, which reads as lag even though the line is continuous.
+* Charge MUST drain on a **timer — one per 250 ms of spraying** — not once per sample, so a full
+  can is always about sixteen seconds of continuous paint regardless of the sample rate. This is
+  also what stops a client that samples slowly from painting the same wall for fewer charges.
 * Sneak-use with a can MUST pick colour (§5.3), never paint and never erase. Erasing is the
   scrub sponge's job (§3.3), so no interaction is ambiguous.
-* Each stamp MUST play `entity.generic.extinguish_fire` at volume 0.3 and pitch 1.6 ± 0.1,
-  and MUST emit 1–2 `minecraft:dust` particles of the paint colour at the hit point. Sounds
-  MUST be rate-limited to at most one per 5 ticks per player.
+* Spraying MUST play `entity.generic.extinguish_fire` at volume 0.3 and pitch 1.6 ± 0.1, and MUST
+  emit 1–2 `minecraft:dust` particles of the paint colour at the hit point, both at most once per
+  5 ticks per player — twenty hisses a second is not a spray can.
 * Painting MUST NOT swing the arm more than once per stamp, and MUST NOT trigger block
   breaking, block placing, or item use of any other kind.
 * Reach: the server MUST reject any paint whose target is further than the player's
@@ -484,7 +489,8 @@ canvas of 256 distinct colours; a single-colour tag is a handful of bytes.
 
 ### 7.8 Bandwidth bounds
 
-* A continuous sprayer generates ≤ 4 × 26 bytes/s = 104 B/s per observer, regardless of how fast
+* A continuous sprayer generates ≤ 20 × 26 bytes/s = 520 B/s per observer, within NFR-PERF-4's
+  1 KB/s budget, regardless of how fast
   they drag: a whole segment costs one payload, which is the point of carrying the previous point
   rather than sampling more often.
 * Chunk sync for a chunk at the 1 024-canvas cap is ≤ 1 MB uncompressed pre-RLE and MUST be
@@ -531,11 +537,11 @@ written through `SimpleRegionStorage` with `RegionStorageInfo(levelId, dimension
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "enabled": true,
   "permissionMode": "ANYONE",
-  "spraysPerSecond": 6,
-  "burstSprays": 12,
+  "spraysPerSecond": 25,
+  "burstSprays": 40,
   "maxCanvasesPerChunk": 1024,
   "maxBrushSize": 2,
   "restrictToTag": false,
@@ -559,8 +565,13 @@ written through `SimpleRegionStorage` with `RegionStorageInfo(levelId, dimension
 
 Per player: a token bucket of capacity `burstSprays`, refilled at `spraysPerSecond`. The
 check MUST happen before any canvas lookup or allocation. Exceeding it drops the packet
-silently (no correction, no message) — a legitimate client cannot exceed it, since it sprays
-at 4/s.
+silently (no correction, no message) — a legitimate client cannot exceed it, since it samples at
+20/s against a default cap of 25/s.
+
+This is a flood bound and **not** the paint economy: charge drains on its own timer (§5.2), so
+raising the cap does not make paint cheaper. A config written by schema 1 caps sprays at 6/s,
+which would silently drop most of a normal stroke, so loading one MUST raise these two fields to
+the current defaults.
 
 ### 9.3 `config/simple_graffiti/client.json`
 

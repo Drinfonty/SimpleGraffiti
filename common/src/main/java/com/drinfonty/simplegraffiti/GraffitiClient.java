@@ -46,8 +46,18 @@ import net.minecraft.world.phys.Vec3;
  * operation is deterministic and idempotent, so replaying it cannot drift.
  */
 public final class GraffitiClient implements ClientHooks.PaintTrigger {
-	/** SPEC 5.2: holding use paints every 5 ticks - 4 sprays a second. */
-	private static final int SPRAY_INTERVAL_TICKS = 5;
+	/**
+	 * Holding use samples the crosshair every tick (SPEC 5.2).
+	 *
+	 * <p>Every tick rather than every fifth because a stroke is only ever drawn as far as the last
+	 * sample: at 5-tick sampling the painted line trailed up to a quarter second of mouse movement
+	 * behind the crosshair, which reads as lag even though the line itself is continuous. Charge
+	 * drains on its own timer, so sampling this often costs no extra paint.
+	 */
+	private static final int SPRAY_INTERVAL_TICKS = 1;
+
+	/** Sound and particles stay at their old cadence; twenty hisses a second is not a spray can. */
+	private static final int FEEDBACK_INTERVAL_TICKS = 5;
 
 	private static GraffitiClient instance;
 
@@ -62,6 +72,7 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 
 	private boolean spraying;
 	private int sprayCooldown;
+	private int feedbackCooldown;
 	private InteractionHand sprayHand = InteractionHand.MAIN_HAND;
 	private boolean sprayErases;
 
@@ -254,6 +265,7 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		sprayHand = hand;
 		sprayErases = erase;
 		sprayCooldown = SPRAY_INTERVAL_TICKS;
+		feedbackCooldown = 0;
 
 		// A genuinely new press starts a fresh stroke; the previous one's end point must not be
 		// joined to it, or clicking elsewhere would draw a line across the gap.
@@ -383,7 +395,8 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		predict(pos, faceId, from, fromU8, fromV8, u8, v8, brush, wholeFace,
 			erase ? PaintColor.EMPTY : PaintColor.opaque(SprayCanItem.colorOf(tool)));
 
-		if (!erase) {
+		if (!erase && --feedbackCooldown <= 0) {
+			feedbackCooldown = FEEDBACK_INTERVAL_TICKS;
 			client.level.playLocalSound(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
 				SoundEvents.GENERIC_EXTINGUISH_FIRE, net.minecraft.sounds.SoundSource.PLAYERS,
 				0.3F, 1.6F, false);

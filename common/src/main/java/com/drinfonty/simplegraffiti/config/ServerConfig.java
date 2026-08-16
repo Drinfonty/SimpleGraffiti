@@ -22,15 +22,22 @@ import com.google.gson.JsonSyntaxException;
  * running server and a log line, not a boot failure at 3am.
  */
 public final class ServerConfig {
-	public static final int SCHEMA_VERSION = 1;
+	/**
+	 * Bumped to 2 when the client moved to sampling every tick. A file written by schema 1 caps
+	 * sprays at 6/s, which would silently drop most of a 20/s stroke and bring the blob-gaps back,
+	 * so those two fields are migrated rather than left to look correct and behave wrongly.
+	 */
+	public static final int SCHEMA_VERSION = 2;
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
 	public int schemaVersion = SCHEMA_VERSION;
 	public boolean enabled = true;
 	public String permissionMode = PermissionMode.ANYONE.name();
-	public int spraysPerSecond = 6;
-	public int burstSprays = 12;
+	// Headroom over the client's 20 samples a second. This is a flood bound, not the paint
+	// economy - charge drains on its own timer (SPEC 5.2), so a faster limit is not cheaper paint.
+	public int spraysPerSecond = 25;
+	public int burstSprays = 40;
 	public int maxCanvasesPerChunk = 1024;
 	public int maxBrushSize = Brush.MAX_SIZE;
 	public boolean restrictToTag = false;
@@ -66,6 +73,14 @@ public final class ServerConfig {
 		ServerConfig defaults = new ServerConfig();
 		boolean repaired = false;
 
+		if (schemaVersion < 2) {
+			// Schema 1 predates per-tick sampling; its rate cap would throttle a normal stroke.
+			spraysPerSecond = defaults.spraysPerSecond;
+			burstSprays = defaults.burstSprays;
+			SimpleGraffiti.LOGGER.info("Raised spray rate limits to {}/s for per-tick painting",
+				spraysPerSecond);
+		}
+
 		if (schemaVersion != SCHEMA_VERSION) {
 			schemaVersion = SCHEMA_VERSION;
 			repaired = true;
@@ -78,12 +93,12 @@ public final class ServerConfig {
 			repaired = true;
 		}
 
-		if (spraysPerSecond < 1 || spraysPerSecond > 100) {
+		if (spraysPerSecond < 1 || spraysPerSecond > 200) {
 			spraysPerSecond = defaults.spraysPerSecond;
 			repaired = true;
 		}
 
-		if (burstSprays < 1 || burstSprays > 200) {
+		if (burstSprays < 1 || burstSprays > 400) {
 			burstSprays = defaults.burstSprays;
 			repaired = true;
 		}

@@ -41,6 +41,7 @@ public final class GraffitiServer {
 	private final PayloadSender sender;
 	private final Map<ResourceKey<Level>, CanvasStore> stores = new HashMap<>();
 	private final Map<UUID, Long> lastCorrection = new HashMap<>();
+	private final Map<UUID, Long> lastCharge = new HashMap<>();
 	private final RateLimiter rateLimiter;
 	private final Path configFile;
 
@@ -200,6 +201,27 @@ public final class GraffitiServer {
 	public void onPlayerLeave(ServerPlayer player) {
 		rateLimiter.forget(player.getUUID());
 		lastCorrection.remove(player.getUUID());
+		lastCharge.remove(player.getUUID());
+	}
+
+	/**
+	 * Whether this player's tool should give up a charge now.
+	 *
+	 * <p>Charge drains on a <em>timer</em> rather than once per paint request, so how smoothly the
+	 * client samples the crosshair is decoupled from how fast the can empties. Sampling every tick
+	 * is what stops the line trailing behind the crosshair, and charging per request would have
+	 * made that cost five times as much paint for the same stroke. It is also the fairer rule: a
+	 * client sampling slowly cannot paint the same wall for fewer charges.
+	 */
+	public boolean tryConsumeCharge(UUID player, long nowMillis, long intervalMillis) {
+		Long previous = lastCharge.get(player);
+
+		if (previous != null && nowMillis - previous < intervalMillis) {
+			return false;
+		}
+
+		lastCharge.put(player, nowMillis);
+		return true;
 	}
 
 	public void onPaint(ServerPlayer player, GraffitiPayloads.PaintC2S request) {
