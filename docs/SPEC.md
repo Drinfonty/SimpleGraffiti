@@ -30,30 +30,26 @@ Keywords: **MUST**, **SHOULD**, **MAY**.
 
 ---
 
-## 2. Palette
+## 2. Colour
 
-The palette is exactly the 16 vanilla dye colours. Canvas values are `paletteIndex + 1`;
-`0` means "no paint".
+Paint colour is an arbitrary 24-bit RGB value. There is no fixed palette.
 
-| Value | `DyeColor` | Value | `DyeColor` |
-| :--- | :--- | :--- | :--- |
-| 1 | `WHITE` | 9 | `LIGHT_GRAY` |
-| 2 | `ORANGE` | 10 | `CYAN` |
-| 3 | `MAGENTA` | 11 | `PURPLE` |
-| 4 | `LIGHT_BLUE` | 12 | `BLUE` |
-| 5 | `YELLOW` | 13 | `BROWN` |
-| 6 | `LIME` | 14 | `GREEN` |
-| 7 | `PINK` | 15 | `RED` |
-| 8 | `GRAY` | 16 | `BLACK` |
+A canvas texel is 4 bytes, `A R G B`:
 
-Values `17..255` are reserved and MUST be treated as `0` on read, without error.
+* `A = 0` means **no paint**; the remaining three bytes MUST be written as `0` and MUST be
+  ignored on read.
+* `A = 255` means painted, with `R G B` the exact colour.
+* Any other `A` value MUST be treated as `255` on read (the format reserves alpha for a
+  future opacity feature; v1.0 paint is either present or absent, which is what keeps
+  rendering in the cutout layer).
 
-Rendered colour MUST be `DyeColor.getTextureDiffuseColor()` (the same RGB vanilla uses for
-dyed leather and wool tinting), so paint matches the block of the same colour.
+The 16 dye colours remain the **presets** offered in the UI and produced by the dye recipes;
+their RGB values MUST be `DyeColor.getTextureDiffuseColor()`, so a can dyed blue paints the
+same blue as blue wool.
 
 ---
 
-## 3. The spray can
+## 3. Items
 
 `simple_graffiti:spray_can`. Stack size 1. `max_damage = 64`. Not enchantable, not repairable
 in an anvil, no `minecraft:tool` component.
@@ -62,16 +58,19 @@ in an anvil, no `minecraft:tool` component.
 
 | Component | Type | Default | Meaning |
 | :--- | :--- | :--- | :--- |
-| `simple_graffiti:paint_color` | `DyeColor` | `WHITE` | The colour sprayed |
+| `minecraft:dyed_color` | `DyedItemColor` (RGB int) | white (`0xFFFFFF`) | The colour sprayed |
 | `minecraft:damage` | int | `0` | Charges used; remaining charges = `64 − damage` |
+
+Colour uses the **vanilla** `minecraft:dyed_color` component rather than a custom one, which
+buys three things for free: dye mixing through a vanilla-style recipe, item tinting with the
+`minecraft:dye` tint source, and a tooltip that already renders a colour.
 
 * A can at 0 remaining charges MUST NOT be destroyed and MUST NOT paint. It MUST show the
   action-bar message `message.simple_graffiti.empty` when used.
 * In creative mode, charges MUST NOT be consumed.
-* The tooltip MUST show the colour name and `charges/64`.
-* The item model MUST be selected from the colour component by a `minecraft:select` model on
-  `minecraft:component` (`simple_graffiti:paint_color`), each variant a `minecraft:constant`
-  tint over one shared texture.
+* The tooltip MUST show `charges/64` in addition to the vanilla dyed-colour line.
+* The item model MUST be a single model whose paint layer is tinted by the
+  `minecraft:dye` tint source, so any RGB value renders with no extra assets.
 
 ### 3.1 Crafting
 
@@ -97,7 +96,8 @@ Shipped verbatim as supplied, at `data/simple_graffiti/recipe/spray_can.json`:
 }
 ```
 
-* The crafted can MUST be `WHITE` with full charges (`damage = 0`).
+* The crafted can MUST have no `minecraft:dyed_color` (rendering as white) and full charges
+  (`damage = 0`).
 * The water bucket MUST leave an empty bucket in the grid (vanilla crafting-remainder
   behaviour); the recipe MUST NOT be modified to work around this.
 * An unlock advancement MUST be provided so the recipe appears in the recipe book on
@@ -105,13 +105,41 @@ Shipped verbatim as supplied, at `data/simple_graffiti/recipe/spray_can.json`:
 
 ### 3.2 Refilling and recolouring
 
-* Crafting a can with any dye MUST produce a can of that colour with `damage = 0`, preserving
-  nothing else that would be lost, via 16 `minecraft:crafting_transmute` recipes at
-  `data/simple_graffiti/recipe/spray_can_<colour>.json`.
+Colour and charge are changed by **separate** recipes, so neither is ever traded for the
+other.
+
+* **Recolour** — one `minecraft:dye` recipe at `data/simple_graffiti/recipe/spray_can_dye.json`
+  with `target = simple_graffiti:spray_can` and `dye = #minecraft:dyes`. 26.2's `DyeRecipe` is
+  data-driven (`target`, `dye`, `result` — it is not hardcoded to armour), so mixing several
+  dyes MUST blend exactly as it does for leather armour, via `DyedItemColor.applyDyes`. This
+  is how arbitrary colours are reached without a UI.
+* Recolouring MUST NOT change `minecraft:damage`.
+* **Refill** — crafting a can with one `minecraft:magma_cream` MUST reset `minecraft:damage`
+  to `0` and MUST preserve `minecraft:dyed_color`, matching the pressurised-can fiction of the
+  crafting recipe. Implemented as `minecraft:crafting_transmute`.
 * If `crafting_transmute` on 26.2 does not apply the result's component patch over the copied
   input components, a custom recipe serializer MUST be used instead; the observable behaviour
   above is what is normative, not the mechanism.
 * A can MAY additionally be recoloured in-world (§5.3), which does **not** refill it.
+
+### 3.3 The scrub sponge
+
+`simple_graffiti:scrub_sponge`. Stack size 1. `max_damage = 128`. Erases graffiti and does
+nothing else.
+
+* Recipe (shapeless, `data/simple_graffiti/recipe/scrub_sponge.json`): one
+  `minecraft:wet_sponge` + one `minecraft:iron_nugget`.
+* **Use** on a painted face MUST erase a brush-sized area at the hit point, using the same
+  brush and the same `Brush.stamp` maths as painting, with `value = 0`.
+* **Sneak-use** on a painted face MUST clear that entire face.
+* Each use that changes at least one texel MUST consume 1 durability and play
+  `block.sponge.absorb` at volume 0.4. A use that changes nothing MUST consume no durability.
+* At 0 durability the sponge MUST break as vanilla tools do.
+* In creative mode durability MUST NOT be consumed.
+* Erasing MUST be subject to the same permission, reach and rate-limit rules as painting
+  (§6), so it cannot be used to grief a protected build.
+* The scrub sponge MUST NOT affect blocks, fluids, items or any vanilla behaviour. Vanilla
+  sponge and wet sponge behaviour MUST be left untouched.
 
 ---
 
@@ -119,11 +147,12 @@ Shipped verbatim as supplied, at `data/simple_graffiti/recipe/spray_can.json`:
 
 ### 4.1 Definition
 
-A **canvas** is the paint on one face of one block: 256 bytes, one per texel, row-major with
-index `= v * 16 + u`. A canvas also carries the UUID of the last player to modify it and the
-epoch-millis timestamp of that modification.
+A **canvas** is the paint on one face of one block: 256 texels of 4 bytes each (§2), 1 024
+bytes total, row-major, the texel at `(pu, pv)` starting at byte offset `4 × (pv × 16 + pu)`.
+A canvas also carries the UUID of the last player to modify it and the epoch-millis timestamp
+of that modification.
 
-* A canvas MUST be discarded when every texel is `0`.
+* A canvas MUST be discarded when every texel is unpainted.
 * A canvas MUST be discarded when its block is broken, replaced, or has its state changed
   such that the face is no longer paintable (§5.1).
 * Canvases MUST NOT move with the block (pistons destroy them in v1.0).
@@ -175,7 +204,7 @@ for pv in clamp(floor((v8 - r) / 16), 0, 15) .. clamp(floor((v8 + r) / 16), 0, 1
     d2 = dx*dx + dy*dy                       # integer
     t  = BAYER4[pv & 3][pu & 3]              # 0..15
     if 256 * d2 < r*r * (16 - t) * (16 - t): # integer comparison, no sqrt, no float
-        canvas[pv * 16 + pu] = value         # value = paletteIndex+1, or 0 to erase
+        canvas[pv * 16 + pu] = value         # value = 0xFF_RR_GG_BB, or 0 to erase
 ```
 
 with the standard 4×4 Bayer matrix:
@@ -191,7 +220,8 @@ BAYER4 = [[ 0,  8,  2, 10],
   floating-point arithmetic is permitted anywhere in this function.
 * Paint MUST NOT spill onto adjacent faces or adjacent blocks: texels outside `0..15` are
   clipped, not wrapped.
-* Erasing uses `value = 0` and is otherwise identical.
+* Erasing uses `value = 0` and is otherwise identical, including the dither pattern — so an
+  erase stroke feathers exactly the way a paint stroke does.
 * A stamp that changes no texel MUST NOT consume a charge and MUST NOT be broadcast.
 
 ---
@@ -223,7 +253,8 @@ optional `message.simple_graffiti.not_paintable` action bar (rate-limited to one
   point, and consumes one charge.
 * Holding use MUST repeat every **5 ticks** (4 sprays/second) for as long as use is held and
   the crosshair is on a paintable face, consuming one charge per stamp.
-* Sneak-use MUST erase instead of paint, and MUST NOT consume a charge.
+* Sneak-use with a can MUST pick colour (§5.3), never paint and never erase. Erasing is the
+  scrub sponge's job (§3.3), so no interaction is ambiguous.
 * Each stamp MUST play `entity.generic.extinguish_fire` at volume 0.3 and pitch 1.6 ± 0.1,
   and MUST emit 1–2 `minecraft:dust` particles of the paint colour at the hit point. Sounds
   MUST be rate-limited to at most one per 5 ticks per player.
@@ -234,22 +265,31 @@ optional `message.simple_graffiti.not_paintable` action bar (rate-limited to one
 
 ### 5.3 Colour selection
 
-* Sneak-use on a block whose colour maps to a `DyeColor` (wool, carpet, concrete, concrete
-  powder, terracotta, glazed terracotta, stained glass, stained glass pane, shulker box,
-  candle, bed, banner) MUST set the held can's colour to that colour, play
-  `block.note_block.hat`, and MUST NOT paint or erase on that use.
-* The **palette key** (default `G`, `key.simple_graffiti.palette`) opens `PaletteScreen`,
-  which shows the 16 colours, the three brush sizes, and remaining charges. Choosing a colour
-  sends `set_color` (§7.6). The screen MUST be openable only while holding a can and only
-  when the server capability is `READY`.
+Three ways to set an arbitrary colour, all reaching the same 24-bit RGB value:
+
+* **Eyedropper** — sneak-use with a can on any block MUST set the can's colour from that
+  block and play `block.note_block.hat`, without painting. The sampled colour MUST be the
+  block's `MapColor` RGB, except that blocks carrying a `DyeColor` (wool, carpet, concrete,
+  concrete powder, terracotta, glazed terracotta, stained glass and panes, shulker boxes,
+  candles, beds, banners) MUST use `DyeColor.getTextureDiffuseColor()` — sampling blue wool
+  MUST give exactly the blue that dyeing the can blue gives.
+* **Picker screen** — the **palette key** (default `G`, `key.simple_graffiti.palette`) opens
+  `PaletteScreen`: RGB and HSV sliders, a `#RRGGBB` hex field, the 16 dye colours as preset
+  swatches, a row of the last 8 colours used by this player, the three brush sizes, and
+  remaining charges. Choosing a colour sends `set_color` (§7.6). The screen MUST be openable
+  only while holding a can and only when the server capability is `READY`.
+* **Dye recipes** — §3.2, including mixing several dyes for blends.
+
+An invalid hex entry MUST disable the confirm button with an inline reason and MUST NOT
+throw.
 * Brush size is a **client-side** preference, sent with each paint request and clamped
   server-side to `maxBrushSize`.
 
 ### 5.4 Removal
 
-* Using a **wet sponge** on a painted face clears that entire face, converts the sponge to a
-  dry sponge, and plays `block.sponge.absorb`.
+* The **scrub sponge** (§3.3) erases a brush-sized area on use and a whole face on sneak-use.
 * Breaking or replacing a block MUST clear all six of its canvases.
+* Vanilla sponges and wet sponges MUST have no graffiti behaviour whatsoever.
 * `/graffiti clear` (§9) clears by radius or by player.
 * Explosions, fire, water flow and rain MUST NOT clear paint in v1.0.
 
@@ -266,19 +306,32 @@ Every paint is a **request**. The server MUST validate, in this order, and MUST 
 4. the target is within reach (§5.2);
 5. the face is paintable (§5.1);
 6. permission allows it (§9.1);
-7. the player holds a spray can in the stated hand with ≥ 1 charge (or is in creative);
+7. the player holds the stated tool in the stated hand — a spray can with ≥ 1 charge to
+   paint, a scrub sponge with ≥ 1 durability to erase (or is in creative);
 8. the rate limiter has a token (§9.2);
 9. the chunk is under `maxCanvasesPerChunk`, or the face already has a canvas.
 
-On success the server applies `Brush.stamp` to the authoritative canvas, consumes the charge,
-records owner + timestamp, marks the chunk dirty, and broadcasts `stamp` (§7.3) to every
-player tracking that chunk **whose connection has the channel**, including the painter.
+On success the server applies `Brush.stamp` to the authoritative canvas, consumes the charge
+or durability, records owner + timestamp, marks the chunk dirty, and broadcasts `stamp`
+(§7.3) to every player tracking that chunk **whose connection has the channel**, including
+the painter.
+
+Erasing with the scrub sponge follows the identical path, with `value = 0`; every rule in
+this section applies to it unchanged.
 
 ### 6.1 Client prediction
 
 The client MUST apply the stamp locally before sending, and MUST NOT wait for the broadcast
 to render it. Replaying its own broadcast stamp MUST be a no-op (the operation is
 idempotent).
+
+**Concurrent painters.** Replay converges only while stamps on a canvas are ordered the same
+everywhere, which a predicting client breaks if a second player stamps the same face at the
+same time: the predictor applied its own stamp first, the server applied the other player's
+first, and overlapping texels can differ. The server MUST therefore detect that two players
+have stamped one canvas within 20 ticks and send those players `canvas_sync` (§7.4) for that
+face instead of `stamp`. A full face is 4 bytes plus RLE, so correctness here costs a packet,
+not a design.
 
 ### 6.2 Correction
 
@@ -323,14 +376,18 @@ in capability state `NONE` (§10).
 | `u8` | byte `0..255` |
 | `v8` | byte `0..255` |
 | `brush` | byte `0..2` |
-| `flags` | byte — bit 0: erase, bit 1: offhand |
+| `flags` | byte — bit 0: erase (scrub sponge), bit 1: offhand, bit 2: whole face |
 
-Out-of-range `face` or `brush` MUST cause the packet to be dropped, not clamped.
+The colour is **not** sent: the server reads it from the can the player is holding, so a
+client cannot paint a colour it does not have. Out-of-range `face` or `brush` MUST cause the
+packet to be dropped, not clamped. `flags` bit 2 is valid only together with bit 0 (a whole
+face clear is an erase).
 
-### 7.3 `simple_graffiti:stamp` (S2C, play) — 14 bytes
+### 7.3 `simple_graffiti:stamp` (S2C, play) — 16 bytes
 
-The `paint` fields plus `value` (byte, `0..16`; `0` = erase). Recipients apply
-`Brush.stamp` with exactly these arguments.
+The `paint` fields plus `rgb` (3 bytes, big-endian `R G B`), which recipients expand to
+`0xFF_RR_GG_BB`. When `flags` bit 0 is set the colour bytes MUST be `0` and recipients apply
+`value = 0`. Recipients apply `Brush.stamp` with exactly these arguments.
 
 ### 7.4 `simple_graffiti:canvas_sync` (S2C, play)
 
@@ -360,23 +417,26 @@ A chunk with more than 512 canvases is sent as multiple payloads; only the first
 
 | Field | Type |
 | :--- | :--- |
-| `colorIndex` | byte `0..15` |
+| `rgb` | 3 bytes, big-endian `R G B` |
 | `hand` | byte, 0 = main, 1 = off |
 
 The server MUST verify the player holds a spray can in that hand before applying, and MUST
-ignore the packet otherwise.
+ignore the packet otherwise. Any 24-bit value is valid; there is nothing to validate beyond
+the length, and setting a colour is free (it costs no charge and is not rate-limited beyond
+the shared packet budget).
 
 ### 7.7 RLE encoding
 
-A canvas is encoded as pairs `(count: unsigned byte 1..255, value: byte)`. The decoded length
-MUST be exactly 256; anything else MUST be rejected as malformed (the payload dropped, the
-canvas left unchanged, one log line). Worst case is 512 bytes, so a canvas is never sent raw.
+A canvas is encoded as runs of `(count: unsigned byte 1..255, texel: 4 bytes ARGB)`. The
+decoded length MUST be exactly 256 texels; anything else MUST be rejected as malformed (the
+payload dropped, the canvas left unchanged, one log line). Worst case is 1 280 bytes for a
+canvas of 256 distinct colours; a single-colour tag is a handful of bytes.
 
 ### 7.8 Bandwidth bounds
 
-* A continuous sprayer generates ≤ 4 × 14 bytes/s = 56 B/s per observer.
-* Chunk sync for a fully-painted 2 048-canvas chunk is ≤ 1 MB uncompressed pre-RLE and MUST
-  be spread over at least 4 payloads; the connection's own compression applies on top.
+* A continuous sprayer generates ≤ 4 × 16 bytes/s = 64 B/s per observer.
+* Chunk sync for a chunk at the 1 024-canvas cap is ≤ 1 MB uncompressed pre-RLE and MUST be
+  spread over at least 2 payloads; the connection's own compression applies on top.
 
 ---
 
@@ -393,13 +453,14 @@ written through `SimpleRegionStorage` with `RegionStorageInfo(levelId, dimension
 {
   Version: 1,
   Canvases: [
-    { X: 7b, Z: 3b, Y: 71, F: 2b, D: [B; 256 bytes], O: [I; 4 ints], T: 1765200000000L }
+    { X: 7b, Z: 3b, Y: 71, F: 2b, D: [B; 1024 bytes], O: [I; 4 ints], T: 1765200000000L }
   ]
 }
 ```
 
 * `X`, `Z` are chunk-local `0..15`; `Y` is absolute world Y; `F` is the 3D data value.
-* `D` is the raw 256-byte canvas (region-file compression handles the redundancy).
+* `D` is the raw 1 024-byte canvas, ARGB per texel (region-file compression handles the
+  redundancy, which is large — most canvases are a few colours).
 * `O` is the last painter's UUID as vanilla's 4-int encoding; `T` is epoch millis. Both MAY
   be absent, in which case the canvas is still loaded.
 * Reads are asynchronous and MUST NOT block the server thread. Writes happen on chunk unload,
@@ -408,7 +469,7 @@ written through `SimpleRegionStorage` with `RegionStorageInfo(levelId, dimension
   MUST NOT fail chunk loading, and MUST NOT be overwritten until something paints in that
   chunk.
 * Entries whose `Y` is outside the dimension's build range, whose `X`/`Z` are out of range, or
-  whose `D` is not exactly 256 bytes MUST be dropped individually, keeping the rest.
+  whose `D` is not exactly 1 024 bytes MUST be dropped individually, keeping the rest.
 
 ---
 
@@ -423,12 +484,12 @@ written through `SimpleRegionStorage` with `RegionStorageInfo(levelId, dimension
   "permissionMode": "ANYONE",
   "spraysPerSecond": 6,
   "burstSprays": 12,
-  "maxCanvasesPerChunk": 2048,
+  "maxCanvasesPerChunk": 1024,
   "maxBrushSize": 2,
   "restrictToTag": false,
   "chargesPerCan": 64,
-  "eraseCostsCharge": false,
-  "wetSpongeClearsFace": true,
+  "spongeDurability": 128,
+  "allowErase": true,
   "clearOnBlockBreak": true
 }
 ```
@@ -456,6 +517,7 @@ at 4/s.
   "schemaVersion": 1,
   "renderGraffiti": true,
   "brushSize": 1,
+  "recentColors": [],
   "showPaintParticles": true,
   "paletteKeyOpensOnHoldOnly": false
 }
@@ -492,7 +554,7 @@ Client capability is a two-state machine: `NONE` (default) → `READY` on a comp
 | :--- | :--- |
 | Singleplayer | Full function over the memory connection. |
 | Modded client, server without the mod | Capability stays `NONE`. No rendering, no local canvas state, no packet ever sent. Using a can shows `message.simple_graffiti.no_server` on the action bar **once per session** and does nothing else. No exception, no disconnect, no log spam. |
-| Modded server, client without the mod | The client is never sent any payload (checked per player, per payload). It is never disconnected because of this mod. It sees unpainted blocks and can play normally. |
+| Modded server, client without the mod | **Not a supported configuration.** This mod registers items, so a server running it requires clients to run it too, exactly as any content mod does: NeoForge refuses such a client during negotiation, and on Fabric the client would meet item ids it cannot resolve as soon as a can enters its view. The mod MUST NOT attempt to work around this. What the mod MUST guarantee is narrower: it never *itself* sends a payload to a connection that has not declared the channel, so it is never the cause of a disconnect or an error for a client that is connected. |
 | Protocol version mismatch | Identical to "server without the mod", plus one log line on each side. |
 | `enabled = false` server-side | `hello` is still sent with the painting-enabled flag clear; the client renders existing graffiti but refuses to paint, showing `message.simple_graffiti.disabled`. |
 
@@ -535,17 +597,17 @@ These are specified behaviour, not defects:
 
 1. Rendering depends on the loader's block-model pipeline. Mods that replace terrain meshing
    (Sodium/Embeddium class) consume that pipeline and are expected to work, but this MUST be
-   verified against a real build before release (criterion 27). A mod that bypasses the model
+   verified against a real build before release (criterion 28). A mod that bypasses the model
    pipeline entirely would render no graffiti; painting, storage and sync are unaffected in
    that case.
 2. Paint is destroyed by breaking the block and by piston movement; it is never dropped or
    recoverable.
 3. Only sturdy full-block faces can be painted. Slabs, stairs, fences and glass panes cannot.
-4. Resolution is one texel (1/16 block) and the palette is the 16 dye colours. There is no
-   sub-texel or arbitrary-RGB paint.
+4. Resolution is one texel (1/16 block). Colour is unrestricted, but paint is fully opaque:
+   there is no partial alpha, no gradient and no sub-texel detail.
 5. `/graffiti clear player` sees loaded chunks only.
 6. Graffiti is invisible to players without the mod; it is not rendered via maps, signs, or
-   any vanilla channel.
+   any vanilla channel. A server running this mod requires it on clients (§10).
 
 ---
 
@@ -563,62 +625,72 @@ run (`:fabric:runServer`, `:neoforge:runServer`) plus at least two clients.
    holding use draws a continuous line at 4 stamps/second.
 3. All six faces of a block paint correctly, with the mark appearing where the crosshair is
    for every face and every player facing.
-4. Sneak-use erases without consuming charges; a wet sponge clears the whole face and becomes
-   a dry sponge.
+4. A scrub sponge erases a brush-sized area on use and the whole face on sneak-use, consumes
+   one durability per effective use and none for a no-op, and breaks at 0. A vanilla wet
+   sponge does nothing to graffiti.
 5. An empty can paints nothing and reports it; a creative can never depletes.
 6. Non-paintable targets (glass pane, slab, chest front, fluid, occluded face) consume
    nothing and paint nothing, and the chest still opens.
-7. Sneak-use on blue wool sets the can blue; the palette screen sets any of the 16 colours;
-   the item model colour follows.
+7. Colour: sneak-use on blue wool sets the can to exactly blue-wool blue; the picker sets an
+   arbitrary hex value; crafting the can with red + white dye yields the same pink that
+   leather armour would; refilling with magma cream keeps the colour and restores charges;
+   dyeing keeps the charges. The item tint follows in every case.
+8. Two texels painted `#123456` and `#123457` round-trip through save, sync and render as
+   distinct colours — no palette quantisation anywhere in the pipeline.
 
 **Persistence and sync**
 
-8. Paint, relog, and the graffiti is byte-identical.
-9. Player A paints; player B sees it within one tick; both see the same result after both
+9. Paint, relog, and the graffiti is byte-identical.
+10. Player A paints; player B sees it within one tick; both see the same result after both
    relog and after a server restart.
-10. Walking out of and back into render distance re-syncs the chunk with no visual difference.
-11. Breaking a painted block removes its paint for every observer, immediately.
-12. `kill -9` on the server mid-painting loses at most the last autosave, and the world loads
+11. Walking out of and back into render distance re-syncs the chunk with no visual difference.
+12. Breaking a painted block removes its paint for every observer, immediately.
+13. `kill -9` on the server mid-painting loses at most the last autosave, and the world loads
     with no error.
-13. Deleting the `simple_graffiti/` region directory starts the world with no graffiti and no
+14. Deleting the `simple_graffiti/` region directory starts the world with no graffiti and no
     error.
-14. A truncated region entry logs once, yields no graffiti for that chunk, does not fail chunk
+15. A truncated region entry logs once, yields no graffiti for that chunk, does not fail chunk
     loading, and is not overwritten until something paints there.
 
 **Compatibility**
 
-15. A vanilla client joins the modded dedicated server, plays 5 minutes around painted chunks,
-    and is never disconnected; the server log shows no graffiti payload sent to it.
-16. A modded client joins a vanilla server, is given a can in creative, right-clicks a wall:
+16. On the modded dedicated server, a connected client whose channel is absent (protocol
+    mismatch, or the mod's networking disabled) plays 5 minutes around painted chunks and is
+    never disconnected or errored by this mod; the server log shows no graffiti payload sent
+    to it. Whether a *vanilla* client may connect at all is the loader's decision and is
+    explicitly out of scope (§10).
+17. A modded client joins a vanilla server, is given a can in creative, right-clicks a wall:
     one action-bar message, no paint, no packet sent (verified by packet capture or log), no
     exception.
-17. A modded client with a mismatched protocol version behaves exactly as in 16.
-18. Vanilla item ids still decode correctly on a modded client connected to a vanilla server
-    (no item desync from the added registry entry).
-19. `enabled = false` blocks painting but still renders existing graffiti.
+18. A modded client with a mismatched protocol version behaves exactly as in 17.
+19. Vanilla item ids still decode correctly on a modded client connected to a vanilla server
+    (no item desync from the two added registry entries).
+20. `enabled = false` blocks painting but still renders existing graffiti.
 
 **Server operation**
 
-20. `spraysPerSecond` is enforced against a packet-spamming client with no tick-time impact
+21. `spraysPerSecond` is enforced against a packet-spamming client with no tick-time impact
     and no correction storm.
-21. `permissionMode = OPS_ONLY` and `BUILD_PERMISSION` each block painting where expected;
+22. `permissionMode = OPS_ONLY` and `BUILD_PERMISSION` each block painting where expected;
     a claim-protection mod that cancels block placement also blocks painting under
     `BUILD_PERMISSION`.
-22. `maxCanvasesPerChunk` refuses new faces at the cap while existing faces stay paintable.
-23. `/graffiti clear radius 16`, `/graffiti clear player <name>`, `/graffiti stats` and
+23. `maxCanvasesPerChunk` refuses new faces at the cap while existing faces stay paintable.
+24. `/graffiti clear radius 16`, `/graffiti clear player <name>`, `/graffiti stats` and
     `/graffiti reload` all behave as specified and report counts.
 
 **Performance**
 
-24. 2 048 painted faces in one chunk: no measurable frame-time regression (< 0.2 ms/frame),
-    no server tick warning, section rebuilds under 1 ms of added cost.
-25. Two players spraying continuously for one minute produce no measurable bandwidth
+25. 1 024 painted faces in one chunk (the default cap): no measurable frame-time regression
+    (< 0.2 ms/frame), no server tick warning, section rebuilds under 1 ms of added cost, and
+    the chunk's graffiti region entry stays within an order of magnitude of a vanilla chunk
+    on disk.
+26. Two players spraying continuously for one minute produce no measurable bandwidth
     or tick-time anomaly.
-26. Graffiti is correctly lit, fogged, occluded and culled, and does not z-fight at any
+27. Graffiti is correctly lit, fogged, occluded and culled, and does not z-fight at any
     distance from 0 to the far plane or at any grazing angle.
-27. **Renderer compatibility.** With Sodium (Fabric) and Embeddium/Sodium (NeoForge)
+28. **Renderer compatibility.** With Sodium (Fabric) and Embeddium/Sodium (NeoForge)
     installed, graffiti renders identically to vanilla rendering, at both `Fancy` and `Fast`
     graphics. If no compatible build exists for 26.2 at release time, this MUST be recorded
     as untested in the release notes rather than claimed.
-28. **Model compatibility.** With a connected-textures or other model-wrapping mod installed,
+29. **Model compatibility.** With a connected-textures or other model-wrapping mod installed,
     both the block and its graffiti render correctly, in either mod-load order.

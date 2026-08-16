@@ -1,7 +1,7 @@
 # Design: Simple Graffiti
 
 Simple Graffiti is a **server + client** Minecraft mod that adds a spray can. Aim at a block
-face, hold use, and paint appears on it — 16×16 pixels per face, in the 16 dye colours,
+face, hold use, and paint appears on it — 16×16 texels per face, in any colour you like,
 stored with the world and shared by everyone.
 
 This document explains *how* it is built and *why*. The normative, testable behaviour lives
@@ -34,22 +34,30 @@ branch ([§11](#11-branches--porting)).
 
 ### The shaping constraint
 
-**The canvas is 16×16 palette-indexed pixels per block face.** Everything else follows from
-that choice, so it is worth stating why it was made instead of the obvious alternative — a
-freeform decal with arbitrary colour and position:
+**The canvas is a fixed 16×16 grid of texels per block face.** Colour is unrestricted — any
+24-bit RGB — but the *grid* is fixed, and everything else follows from that, so it is worth
+stating why it was chosen over the obvious alternative, a freeform decal with arbitrary
+position and size:
 
-| | 16×16 palette canvas (chosen) | Freeform RGBA decals |
+| | 16×16 texel canvas (chosen) | Freeform decals |
 | :--- | :--- | :--- |
-| Storage per painted face | 256 B, fixed | unbounded — grows with every spray |
-| Wire format for one spray | 13 bytes (a stamp op both sides replay) | a new decal record, forever |
+| Storage per painted face | 1 KB, fixed | unbounded — grows with every spray |
+| Wire format for one spray | 16 bytes (a stamp op both sides replay) | a new decal record, forever |
 | Rendering | merged coloured quads emitted with the block's own model | per-decal quads, sorted, per frame |
 | Look | matches Minecraft's own 16-px texel grid | reads as a foreign overlay |
-| Erasing | clear pixels | delete/split decal records |
-| Worst case | bounded by geometry: 6 faces × 256 B per block | bounded by nothing |
+| Erasing | clear texels | delete/split decal records |
+| Worst case | bounded by geometry: 6 faces × 1 KB per block | bounded by nothing |
 
-The pixel grid is what makes the storage, the protocol and the renderer all bounded, and it
-happens to be the aesthetic the game already uses. The cost is that you cannot paint smaller
-than a texel — which for a mod called *Simple* Graffiti is a feature.
+The grid is what makes the storage, the protocol and the renderer all bounded, and it happens
+to be the aesthetic the game already uses. The cost is that you cannot paint smaller than a
+texel — which for a mod called *Simple* Graffiti is a feature.
+
+**Colour is not similarly constrained**, because it need not be. A texel stores ARGB directly
+(1 KB/face rather than 256 B for a 16-entry palette), and in exchange every colour maths
+question disappears: no palette to negotiate, no quantisation on paint, no eviction rule when
+a face exceeds N colours, and — most importantly — no palette *ordering* for two concurrent
+painters' stamps to disagree about. RLE and region compression recover most of the size on
+disk, since real canvases use few colours even though they may use any.
 
 ---
 
@@ -110,7 +118,7 @@ simplegraffiti/
 │   ├── Canvas.java                # 16x16 byte grid, immutable-on-publish
 │   ├── CanvasKey.java             # (BlockPos, Direction) packed into a long
 │   ├── FaceAxes.java              # Direction -> (u,v) axes and hit-point mapping
-│   ├── Palette.java               # 16 dye colours + empty; index <-> DyeColor <-> ARGB
+│   ├── PaintColor.java            # ARGB helpers, dye presets, block-colour sampling
 │   ├── Brush.java                 # THE deterministic stamp: shared by client and server
 │   └── CanvasCodec.java           # NBT and network encodings, RLE
 ├── world/
@@ -120,7 +128,8 @@ simplegraffiti/
 │   └── PaintService.java          # validation + apply + broadcast (the authority)
 ├── item/
 │   ├── SprayCanItem.java          # use / useOn, charges, colour, feedback
-│   └── GraffitiComponents.java    # paint_color, charges component types
+│   ├── ScrubSpongeItem.java       # brush erase / whole-face erase
+│   └── GraffitiItems.java         # item registration hook (both loaders call in)
 ├── net/
 │   ├── GraffitiPayloads.java      # payload types + stream codecs (no loader API)
 │   ├── HelloS2C.java              # protocol handshake / capability advertisement
@@ -128,7 +137,7 @@ simplegraffiti/
 │   ├── StampS2C.java              # an applied stamp, broadcast
 │   ├── CanvasSyncS2C.java         # full canvases for a chunk
 │   ├── ClearS2C.java              # face/block/chunk cleared
-│   └── SetColorC2S.java           # palette selection
+│   └── SetColorC2S.java           # colour picker selection
 ├── server/
 │   ├── GraffitiCommands.java      # /graffiti, brigadier, loader-neutral
 │   ├── RateLimiter.java           # per-player token bucket
@@ -140,12 +149,12 @@ simplegraffiti/
     ├── ClientCanvasStore.java     # what this client knows, read by mesher threads
     ├── ClientPaintController.java # hold-to-spray, optimistic apply, reconciliation
     ├── ServerCapability.java      # NONE | READY — the degradation gate
-    ├── GraffitiKeys.java          # palette keybind
+    ├── GraffitiKeys.java          # colour picker keybind
     ├── gui/PaletteScreen.java
     └── render/
         ├── CanvasMesher.java      # canvas -> merged rectangles (loader-neutral geometry)
-        ├── PaintQuad.java         # one merged rect: face, texel bounds, palette index
-        └── PaintSprites.java      # atlas sprite lookup + palette ARGB
+        ├── PaintQuad.java         # one merged rect: face, texel bounds, ARGB
+        └── PaintSprites.java      # atlas sprite lookup
 ```
 
 The renderer is split so the *geometry* — greedy merging, face maths, decal offset, UVs — is
@@ -201,13 +210,14 @@ No service-loader indirection — two loaders do not justify the ceremony.
 A **canvas** is the paint on one face of one block: a 16×16 grid of bytes, one per texel.
 
 ```
-value 0        empty (no paint)
-value 1..16    palette index + 1   (the 16 dye colours, see Palette)
-value 17..255  reserved
+alpha 0     empty (no paint); the RGB bytes are zero
+alpha 255   painted, RGB is the exact colour
 ```
 
-256 bytes per painted face, fixed. `Canvas` holds the `byte[256]`, the last painter's UUID
-and a timestamp. Canvases are **replaced, not mutated in place** once published: a paint op
+Four bytes per texel, 1 KB per painted face, fixed. `Canvas` holds the `int[256]` (ARGB), the
+last painter's UUID and a timestamp. Alpha is stored rather than implied so that a future
+partial-opacity feature does not need a storage migration; v1.0 writes only 0 or 255, which
+is what keeps rendering in the cutout layer. Canvases are **replaced, not mutated in place** once published: a paint op
 copies, stamps, and swaps the reference in the owning map. That is what makes it safe for
 the client's chunk-mesher threads to read a canvas without locking — see [§6.2](#62-thread-safety).
 
@@ -241,23 +251,48 @@ Because the same op replays identically everywhere, a spray costs **13 bytes on 
 
 `simple_graffiti:spray_can`, stack size 1, with two data components:
 
-* `simple_graffiti:paint_color` — a `DyeColor`, default `WHITE`.
+* `minecraft:dyed_color` — the **vanilla** component, an arbitrary RGB int. Using vanilla's
+  rather than a custom one is what makes dye mixing, item tinting and the tooltip free.
 * charges — carried by vanilla `minecraft:damage` against `max_damage = 64`, so the vanilla
   durability bar, the item tooltip and the "breaks when exhausted" plumbing all work for
   free. An exhausted can is **not** destroyed; it stops painting (an item that vanishes
   mid-mural would be infuriating), which is why `SprayCanItem` checks charges itself rather
   than letting vanilla damage handling consume it.
 
-The item model is data-only: a `minecraft:select` model on
-`minecraft:component` / `simple_graffiti:paint_color` picking one of 16 tiny model files, each
-the same texture with a `minecraft:constant` tint. One texture, sixteen JSONs, no client code.
+The item model is one model whose paint layer is tinted by the `minecraft:dye` tint source.
+Any of 16 million colours renders with a single texture and no client code — which is the
+concrete payoff of storing colour in the vanilla component.
 
-Recolour and refill are recipes ([SPEC §3.2](SPEC.md#32-refilling-and-recolouring)) built on
-`minecraft:crafting_transmute`, which is what vanilla uses to dye a shulker box while keeping
-its contents. **Verification note:** whether a transmute recipe's result component patch is
-applied on top of the copied input components (needed to reset `minecraft:damage` to 0 while
-setting the colour) must be confirmed in-game on 26.2. If it is not, the fallback is a small
-custom recipe serializer in `:common` — one class, no user-visible difference.
+**Colour and charge are changed by separate recipes** ([SPEC §3.2](SPEC.md#32-refilling-and-recolouring)),
+so a player never has to spend one to get the other:
+
+* *Recolour* is a single `minecraft:dye` recipe. 26.2's `DyeRecipe` is data-driven — a
+  `target` ingredient, a `dye` ingredient and a result — not hardcoded to armour, so one JSON
+  gives the can leather-armour dye mixing through `DyedItemColor.applyDyes`. Arbitrary colours
+  are therefore reachable in survival, at a crafting table, without any UI at all.
+* *Refill* is `minecraft:crafting_transmute` with magma cream, matching the pressurised-can
+  fiction of the crafting recipe, and preserves the colour.
+
+**Verification note:** whether a transmute recipe's result component patch is applied over the
+copied input components (needed to reset `minecraft:damage` to 0) must be confirmed in-game on
+26.2. If not, the fallback is a small custom recipe serializer in `:common` — one class, no
+user-visible difference.
+
+### The scrub sponge
+
+`simple_graffiti:scrub_sponge` is a second item, `max_damage = 128`, crafted from a wet sponge
+and an iron nugget. Use erases a brush-sized area; sneak-use clears the whole face.
+
+It exists rather than reusing the vanilla wet sponge for two reasons. The first is a rule this
+mod set itself: *add no behaviour to vanilla items* — a wet sponge that silently gained a new
+right-click action is exactly the kind of surprise that makes mods hard to reason about, and
+would collide with any other mod doing the same. The second is interaction budget: sneak-use
+with the can is the eyedropper, so erasing needed its own verb anyway, and a dedicated item
+gives it one that is discoverable in the creative tab and the recipe book.
+
+Erasing runs through the *same* `PaintService` path as painting, with `value = 0` — same
+validation, same permission check, same rate limit, same broadcast. Erasing someone's mural is
+a build action too, so it must not be a back door around protection.
 
 ---
 
@@ -280,7 +315,7 @@ custom recipe serializer in `:common` — one class, no user-visible difference.
                                               · rate limiter has a token
                                             Brush.stamp(authoritative canvas)
                                             consume charge, mark chunk dirty
-                     ◄───────── StampS2C(same 13 bytes + colour) to every player
+                     ◄───────── StampS2C(same 13 bytes + RGB) to every player
                                 tracking that chunk (including the painter)
    apply stamp, remesh
    (idempotent — replaying our own prediction is a no-op)
@@ -289,7 +324,14 @@ custom recipe serializer in `:common` — one class, no user-visible difference.
 ```
 
 Rejection repairs the client with the real canvas rather than sending "no": the client cannot
-be left holding a ghost, and a single-face sync is 260 bytes.
+be left holding a ghost, and a single-face sync is RLE over 1 KB — a few dozen bytes for a
+real canvas.
+
+The same repair covers the one case where replaying stamps does not converge: two players
+painting the same face at once see their own stamp applied first and the other's second, in
+opposite orders. The server detects two painters on one canvas within 20 ticks and sends a
+full face instead of a stamp ([SPEC §6.1](SPEC.md#61-client-prediction)). Prediction is a
+latency trick, not a consistency model, and this is where it has to yield.
 
 **Chunk lifecycle.** `PlayerChunkSenderMixin` fires when a chunk is sent to a player →
 `CanvasSyncS2C` for that chunk if it has any canvases and if the player's channel is open;
@@ -324,12 +366,12 @@ NeoForge  ModelEvent.ModifyBakingResult → DynamicBlockStateModel
 
 `CanvasMesher` is shared and does the actual work, per canvas:
 
-1. **Greedy-merge** runs of equal palette index into maximal rectangles (rows first, then
+1. **Greedy-merge** runs of equal ARGB into maximal rectangles (rows first, then
    merge identical adjacent rows). A typical tag of one or two colours collapses from ~200
-   texels into a handful of rectangles; the worst case (a 16-colour checkerboard) is bounded
-   at 256.
+   texels into a handful of rectangles; the worst case (every texel a different colour) is
+   bounded at 256.
 2. Produce one `PaintQuad` per rectangle on the face plane, offset **0.005 blocks** along the
-   face normal to avoid z-fighting, carrying the palette ARGB and UVs into a single
+   face normal to avoid z-fighting, carrying the texel ARGB and UVs into a single
    `simple_graffiti:paint/spray` sprite in the block atlas (a subtle grain, sampled
    continuously across the face so it does not repeat per texel).
 3. Emit with cutout material flags and `cullFace = null` (the quad floats just off the
@@ -407,7 +449,7 @@ NONE  ── HelloS2C with a compatible protocol version ──►  READY
 READY ── disconnect / world unload ──►  NONE
 ```
 
-Everything the client does — rendering, painting, storing, the palette screen's "apply" —
+Everything the client does — rendering, painting, erasing, storing, the picker's "apply" —
 is gated on `READY`. On `NONE` the can is an inert item: right-click does nothing, shows one
 action-bar message per session, and sends no packet.
 
@@ -418,13 +460,15 @@ the channel**:
 | :--- | :--- |
 | Singleplayer | The integrated server has the mod; handshake happens over the memory connection; full function. |
 | Modded client, vanilla server | No `HelloS2C` ever arrives → `NONE`. Fabric additionally guards every send with `ClientPlayNetworking.canSend`, NeoForge with `NetworkRegistry.hasChannel`. The item exists client-side but cannot be obtained (the server has no recipe) and does nothing if given in creative. |
-| Modded server, vanilla or mod-less client | The server checks `canSend` / `hasChannel` per player before every payload, so such a client is never sent one. NeoForge payloads are registered `optional()`, so the client is not disconnected during negotiation. |
+| Modded server, mod-less client | **Not supported, and not something the mod tries to fix.** Registering items means a server running this mod requires it on clients, exactly like any content mod: NeoForge refuses such a client during negotiation, and on Fabric it would meet unresolvable item ids the moment a spray can enters its view. What the mod *does* guarantee is narrower and testable — it never sends a payload to a connection that has not declared the channel (`canSend` / `hasChannel` per player, per payload), so it is never itself the cause of a disconnect or an error. `optional()` registration on NeoForge keeps the mod's own channels out of the negotiation's required set. |
 | Protocol version mismatch | Treated exactly as "no mod": the client stays `NONE`, logs one line, and the server stops sending to it. |
 
-Registering an item does not endanger a vanilla-server connection: modded item ids are
-appended after the vanilla ones, so vanilla registry ids still decode correctly on a modded
-client. This is standard, but it is on the acceptance list ([SPEC §11](SPEC.md#11-acceptance-criteria))
-because it is exactly the kind of thing that silently breaks.
+The *other* direction is the one this mod genuinely supports, and it is the original design
+goal: registering items does not endanger a modded client's connection to a **vanilla**
+server, because modded item ids are appended after the vanilla ones, leaving vanilla registry
+ids decoding correctly. That is standard behaviour, but it is on the acceptance list
+([SPEC §13](SPEC.md#13-acceptance-criteria)) because it is exactly the kind of thing that
+silently breaks.
 
 ---
 
@@ -464,7 +508,7 @@ Painting is a build action, so it must be governable like one.
   mods that hook block placement govern graffiti for free without an integration API.
 * **Rate limiting** — a per-player token bucket in `RateLimiter`, refilled at the configured
   sprays/second, checked before any work. Bounded first so packet spam costs a map lookup.
-* **Caps** — max canvases per chunk (default 2 048) bounds worst-case memory, disk and mesh
+* **Caps** — max canvases per chunk (default 1 024) bounds worst-case memory, disk and mesh
   cost; over the cap, new *faces* are refused while existing ones stay paintable.
 * **Tags** — `#simple_graffiti:paintable` and `#simple_graffiti:not_paintable` let a pack
   restrict surfaces without code.
@@ -554,7 +598,7 @@ APIs that are stable across 26.x and should move by cherry-pick.
 
 | Version | Contents |
 | :--- | :--- |
-| **1.0.0** | Spray can, paint/erase, palette UI + colour pick, server-authoritative canvases, region-file storage, chunk sync, baked rendering, degradation both ways, server config, `/graffiti` commands |
+| **1.0.0** | Spray can + scrub sponge, arbitrary RGB with picker/dye/eyedropper, server-authoritative canvases, region-file storage, chunk sync, model-pipeline rendering, degradation on vanilla servers, server config, `/graffiti` commands |
 | **1.1.0** | `legacy-26.1`, stencils/stamps, bigger brushes, opt-in weathering, paint moved by pistons, audit log |
 | **1.2.0** | Region export/import, partial-block surfaces, protection-mod integrations |
 
@@ -562,12 +606,16 @@ APIs that are stable across 26.x and should move by cherry-pick.
 
 ## 13. Open questions
 
-* **Charges (64) and cost (1 per spray)** are unplaytested guesses. A mural should feel like
-  it costs something without becoming an inventory-management chore.
+* **Charges (64), cost (1 per spray) and sponge durability (128)** are unplaytested guesses. A
+  mural should feel like it costs something without becoming an inventory-management chore.
 * Should a can be craftable *pre-coloured* by including a dye in the recipe? The supplied
   recipe has no dye slot, so v1.0 crafts white and recolours afterwards.
-* Should erasing consume a charge? Currently free, to encourage experimentation.
-* Is 2 048 canvases/chunk the right cap? It is ~512 KB of paint per chunk, which is generous;
-  the real limit may end up being what a section rebuild can chew through.
+* Should the scrub sponge be craftable back from a broken one, or is 128 uses enough that
+  nobody notices? Currently it just breaks.
+* Is 1 024 canvases/chunk the right cap? It is 1 MB of paint per chunk uncompressed, far less
+  on disk; the real limit may end up being what a section rebuild can chew through.
+* Per-texel ARGB costs 4× a 16-entry palette. If painted worlds turn out heavier than
+  expected, a per-canvas palette recovers most of it — at the cost of an eviction rule and a
+  replay-order hazard, which is why it was not chosen up front.
 * Whether `crafting_transmute` honours a result component patch on 26.2 decides whether refill
   is data-only or needs a small custom serializer ([§4](#item-state)).
