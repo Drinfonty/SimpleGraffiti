@@ -1,0 +1,6 @@
+{
+  "type": "minecraft:dye",
+  "target": "simple_graffiti:spray_can",
+  "dye": "#minecraft:dyes",
+  "result": "simple_graffiti:spray_can"
+}

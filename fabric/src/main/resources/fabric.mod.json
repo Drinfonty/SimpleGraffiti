@@ -1,0 +1,33 @@
+{
+	"schemaVersion": 1,
+	"id": "simple_graffiti",
+	"version": "${version}",
+	"name": "Simple Graffiti",
+	"description": "Spray-paint 16x16 pixel graffiti onto any block face with a craftable spray can. Server-authoritative and saved with the world. This mod adds items, so a server running it requires it on clients; a client running it on a vanilla server simply does nothing.",
+	"authors": [
+		"Drinfonty"
+	],
+	"contact": {
+		"sources": "https://github.com/Drinfonty/SimpleGraffiti",
+		"issues": "https://github.com/Drinfonty/SimpleGraffiti/issues"
+	},
+	"license": "CC0-1.0",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.drinfonty.simplegraffiti.fabric.SimpleGraffitiFabric"
+		],
+		"client": [
+			"com.drinfonty.simplegraffiti.fabric.SimpleGraffitiFabricClient"
+		]
+	},
+	"mixins": [
+		"simple_graffiti.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "${minecraftDependency}",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

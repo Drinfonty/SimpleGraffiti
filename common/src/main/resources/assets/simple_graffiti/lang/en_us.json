@@ -1,0 +1,30 @@
+{
+  "item.simple_graffiti.spray_can": "Spray Can",
+  "item.simple_graffiti.scrub_sponge": "Scrub Sponge",
+
+  "tooltip.simple_graffiti.charges": "%s/%s charges",
+
+  "message.simple_graffiti.empty": "This can is empty.",
+  "message.simple_graffiti.no_server": "This server does not have Simple Graffiti installed.",
+  "message.simple_graffiti.disabled": "Graffiti is disabled on this server.",
+  "message.simple_graffiti.not_paintable": "You cannot paint on that.",
+
+  "key.simple_graffiti.palette": "Open Palette",
+
+  "screen.simple_graffiti.palette": "Spray Can Palette",
+  "screen.simple_graffiti.red": "Red: %s",
+  "screen.simple_graffiti.green": "Green: %s",
+  "screen.simple_graffiti.blue": "Blue: %s",
+  "screen.simple_graffiti.hex": "Hex colour",
+  "screen.simple_graffiti.apply": "Apply",
+  "screen.simple_graffiti.brush.0": "Small",
+  "screen.simple_graffiti.brush.1": "Medium",
+  "screen.simple_graffiti.brush.2": "Large",
+
+  "command.simple_graffiti.cleared": "Cleared %s canvases.",
+  "command.simple_graffiti.cleared_player": "Cleared %s canvases in loaded chunks. Chunks that are not loaded are untouched.",
+  "command.simple_graffiti.stats": "%s canvases across %s chunks (%s KiB in memory).",
+  "command.simple_graffiti.reloaded": "Reloaded the Simple Graffiti config.",
+  "command.simple_graffiti.enabled": "Graffiti enabled. Existing paint was left untouched.",
+  "command.simple_graffiti.disabled": "Graffiti disabled. Existing paint was left untouched."
+}

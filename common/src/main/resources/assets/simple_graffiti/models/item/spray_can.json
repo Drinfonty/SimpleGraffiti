@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "simple_graffiti:item/spray_can",
+    "layer1": "simple_graffiti:item/spray_can_color"
+  }
+}
