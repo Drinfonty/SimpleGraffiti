@@ -38,9 +38,27 @@ public class PaletteScreen extends Screen {
 	private static final int SWATCH_GAP = 1;
 	private static final int ROW_HEIGHT = 20;
 
-	/** Wide enough for all 16 dye swatches plus both margins - the row is what sets the width. */
+	private static final int HEX_WIDTH = 76;
+	private static final int PREVIEW_WIDTH = 28;
+	private static final int BRUSH_WIDTH = 46;
+	private static final int CONTROL_GAP = 6;
+	private static final int BRUSH_GAP = 2;
+	private static final int BRUSH_COUNT = Brush.MAX_SIZE - Brush.MIN_SIZE + 1;
+
+	private static final int SWATCH_ROW_WIDTH =
+		DyeColor.values().length * (SWATCH + SWATCH_GAP) - SWATCH_GAP;
+	private static final int CONTROL_ROW_WIDTH = HEX_WIDTH + CONTROL_GAP + PREVIEW_WIDTH + CONTROL_GAP
+		+ BRUSH_COUNT * BRUSH_WIDTH + (BRUSH_COUNT - 1) * BRUSH_GAP;
+
+	/**
+	 * Wide enough for whichever row needs the most - the swatches or the controls.
+	 *
+	 * <p>Sizing it from the swatch row alone was not enough: the control row is wider, so the last
+	 * brush button hung off the edge of the panel. Taking the maximum is the only version that
+	 * cannot be wrong when either row changes.
+	 */
 	private static final int PANEL_WIDTH =
-		MARGIN * 2 + DyeColor.values().length * (SWATCH + SWATCH_GAP) - SWATCH_GAP;
+		MARGIN * 2 + Math.max(SWATCH_ROW_WIDTH, CONTROL_ROW_WIDTH);
 	private static final int PANEL_HEIGHT = 210;
 
 	private int red;
@@ -137,21 +155,15 @@ public class PaletteScreen extends Screen {
 				onChannelDragged();
 			})));
 
-		// The control row is laid out left to right and must not run past the panel: hex field,
-		// then the live preview, then one button per brush size.
-		int hexWidth = 76;
-		int previewWidth = 28;
-		int brushWidth = 46;
-		int brushCount = Brush.MAX_SIZE - Brush.MIN_SIZE + 1;
-
-		hexField = new EditBox(font, left + MARGIN, controlRowY(), hexWidth, ROW_HEIGHT,
+		// The control row runs left to right: hex field, live preview, one button per brush size.
+		hexField = new EditBox(font, left + MARGIN, controlRowY(), HEX_WIDTH, ROW_HEIGHT,
 			Component.translatable("screen.simple_graffiti.hex"));
 		hexField.setMaxLength(7);
 		hexField.setValue(PaintColor.toHex(rgb()));
 		hexField.setResponder(this::onHexTyped);
 		addRenderableWidget(hexField);
 
-		int brushLeft = left + MARGIN + hexWidth + 6 + previewWidth + 6;
+		int brushLeft = left + MARGIN + HEX_WIDTH + CONTROL_GAP + PREVIEW_WIDTH + CONTROL_GAP;
 
 		for (int size = Brush.MIN_SIZE; size <= Brush.MAX_SIZE; size++) {
 			int brush = size;
@@ -163,13 +175,14 @@ public class PaletteScreen extends Screen {
 							markSelectedBrush(brush);
 						}
 					})
-				.bounds(brushLeft + (size - Brush.MIN_SIZE) * (brushWidth + 2), controlRowY(),
-					brushWidth, ROW_HEIGHT)
+				.bounds(brushLeft + (size - Brush.MIN_SIZE) * (BRUSH_WIDTH + BRUSH_GAP), controlRowY(),
+					BRUSH_WIDTH, ROW_HEIGHT)
 				.build();
 			brushButtons.add(addRenderableWidget(button));
 		}
 
-		if (brushLeft + brushCount * (brushWidth + 2) - 2 > left + PANEL_WIDTH - MARGIN) {
+		if (brushLeft + BRUSH_COUNT * BRUSH_WIDTH + (BRUSH_COUNT - 1) * BRUSH_GAP
+			> left + PANEL_WIDTH - MARGIN) {
 			// Not an exception: a cramped row is a cosmetic problem, and throwing here would take
 			// the whole screen down. It is worth a log line so it is not discovered in a
 			// screenshot months later, which is exactly how the old overlap was found.
@@ -327,8 +340,8 @@ public class PaletteScreen extends Screen {
 		super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
 		// The preview sits between the hex field and the brush buttons, in the gap left for it.
-		int previewX = left + MARGIN + 76 + 6;
-		graphics.fill(previewX, controlRowY(), previewX + 28, controlRowY() + ROW_HEIGHT,
+		int previewX = left + MARGIN + HEX_WIDTH + CONTROL_GAP;
+		graphics.fill(previewX, controlRowY(), previewX + PREVIEW_WIDTH, controlRowY() + ROW_HEIGHT,
 			PaintColor.opaque(rgb()));
 
 		DyeColor[] dyes = DyeColor.values();
