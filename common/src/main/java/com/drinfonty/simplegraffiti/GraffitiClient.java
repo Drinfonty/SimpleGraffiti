@@ -23,6 +23,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
+import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.InteractionHand;
@@ -341,6 +342,31 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 			client.level.playLocalSound(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
 				SoundEvents.GENERIC_EXTINGUISH_FIRE, net.minecraft.sounds.SoundSource.PLAYERS,
 				0.3F, 1.6F, false);
+
+			spawnPaintParticles(client, hit, face, SprayCanItem.colorOf(tool));
+		}
+	}
+
+	/**
+	 * A puff of paint-coloured dust at the hit point, drifting off the wall (SPEC 5.2).
+	 *
+	 * <p>Purely local decoration: it is never sent, never replayed, and disabled by a client
+	 * setting, because nothing about it is authoritative.
+	 */
+	private void spawnPaintParticles(Minecraft client, Vec3 hit, Direction face, int rgb) {
+		if (!config.showPaintParticles || client.level == null) {
+			return;
+		}
+
+		DustParticleOptions dust = new DustParticleOptions(PaintColor.opaque(rgb), 0.8F);
+		double drift = 0.02;
+
+		for (int i = 0; i < 2; i++) {
+			client.level.addParticle(dust,
+				hit.x + face.getStepX() * 0.02,
+				hit.y + face.getStepY() * 0.02,
+				hit.z + face.getStepZ() * 0.02,
+				face.getStepX() * drift, face.getStepY() * drift, face.getStepZ() * drift);
 		}
 	}
 

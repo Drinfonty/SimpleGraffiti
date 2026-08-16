@@ -4,6 +4,7 @@ import com.drinfonty.simplegraffiti.GraffitiClient;
 import com.drinfonty.simplegraffiti.SimpleGraffiti;
 import com.drinfonty.simplegraffiti.client.ClientPayloadSender;
 import com.drinfonty.simplegraffiti.client.gui.PaletteScreen;
+import com.drinfonty.simplegraffiti.client.render.PaintSprites;
 import com.drinfonty.simplegraffiti.fabric.render.GraffitiWrapperModel;
 import com.drinfonty.simplegraffiti.item.GraffitiItems;
 import com.drinfonty.simplegraffiti.net.GraffitiPayloads;
@@ -52,9 +53,13 @@ public class SimpleGraffitiFabricClient implements ClientModInitializer {
 
 		registerReceivers();
 
-		ModelLoadingPlugin.register(context ->
+		ModelLoadingPlugin.register(context -> {
+			// This runs on every model reload, which is exactly when the atlas is restitched, so
+			// it is the right moment to drop the cached sprite reference.
+			PaintSprites.invalidate();
 			context.modifyBlockModelAfterBake().register(ModelModifier.WRAP_LAST_PHASE,
-				(model, modifierContext) -> new GraffitiWrapperModel(model)));
+				(model, modifierContext) -> new GraffitiWrapperModel(model));
+		});
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			GraffitiClient graffiti = GraffitiClient.get();

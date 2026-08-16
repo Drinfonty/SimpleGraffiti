@@ -13,7 +13,6 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 
@@ -160,7 +159,8 @@ public class PaletteScreen extends Screen {
 
 		// Nothing is applied locally: the server owns the item's component, exactly as it owns
 		// every canvas. It echoes the change back through the normal inventory sync.
-		client.sender().sendIfPossible(new GraffitiPayloads.SetColorC2S(rgb, InteractionHand.MAIN_HAND == InteractionHand.OFF_HAND ? 1 : 0));
+		// Always the main hand: the screen only opens while a can is held there.
+		client.sender().sendIfPossible(new GraffitiPayloads.SetColorC2S(rgb, 0));
 
 		rememberRecent(client.config(), rgb);
 		client.saveConfig();

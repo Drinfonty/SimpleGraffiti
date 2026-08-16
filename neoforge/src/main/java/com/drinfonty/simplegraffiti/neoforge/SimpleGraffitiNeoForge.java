@@ -20,6 +20,8 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.level.ChunkEvent;
+import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
@@ -86,6 +88,25 @@ public class SimpleGraffitiNeoForge {
 
 			if (server != null && event.getEntity() instanceof ServerPlayer player) {
 				server.onPlayerLeave(player);
+			}
+		});
+
+		// Graffiti follows the chunk it decorates: written and released when the chunk unloads,
+		// so a long-lived server's resident cost tracks loaded chunks rather than total paint.
+		NeoForge.EVENT_BUS.addListener(ChunkEvent.Unload.class, event -> {
+			GraffitiServer server = GraffitiServer.get();
+
+			if (server != null && event.getLevel() instanceof ServerLevel level) {
+				server.onChunkUnloaded(level, event.getChunk().getPos());
+			}
+		});
+
+		// Autosave, so a crash costs at most the last save interval rather than the session.
+		NeoForge.EVENT_BUS.addListener(LevelEvent.Save.class, event -> {
+			GraffitiServer server = GraffitiServer.get();
+
+			if (server != null) {
+				server.saveAll();
 			}
 		});
 

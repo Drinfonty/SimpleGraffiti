@@ -10,6 +10,7 @@ import com.drinfonty.simplegraffiti.world.PaintService;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
@@ -86,6 +87,25 @@ public class SimpleGraffitiFabric implements ModInitializer {
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) ->
 			GraffitiCommands.register(dispatcher));
+
+		// Graffiti follows the chunk it decorates: written and released when the chunk unloads,
+		// so a long-lived server's resident cost tracks loaded chunks rather than total paint.
+		ServerChunkEvents.CHUNK_UNLOAD.register((level, chunk) -> {
+			GraffitiServer graffiti = GraffitiServer.get();
+
+			if (graffiti != null) {
+				graffiti.onChunkUnloaded(level, chunk.getPos());
+			}
+		});
+
+		// Autosave, so a crash costs at most the last save interval rather than the session.
+		ServerLifecycleEvents.BEFORE_SAVE.register((server, flush, force) -> {
+			GraffitiServer graffiti = GraffitiServer.get();
+
+			if (graffiti != null) {
+				graffiti.saveAll();
+			}
+		});
 
 		// Breaking a block destroys its paint (SPEC 5.4). Hooked after the break rather than
 		// before, so a cancelled break does not wipe a mural.
