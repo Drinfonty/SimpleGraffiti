@@ -7,6 +7,7 @@ import com.drinfonty.simplegraffiti.canvas.Canvas;
 import com.drinfonty.simplegraffiti.canvas.CanvasCodec;
 import com.drinfonty.simplegraffiti.canvas.CanvasKey;
 import com.drinfonty.simplegraffiti.canvas.FaceAxes;
+import com.drinfonty.simplegraffiti.canvas.FaceStroke;
 import com.drinfonty.simplegraffiti.canvas.PaintColor;
 import com.drinfonty.simplegraffiti.client.ClientCanvasStore;
 import com.drinfonty.simplegraffiti.client.ClientPayloadSender;
@@ -15,6 +16,7 @@ import com.drinfonty.simplegraffiti.config.ClientConfig;
 import com.drinfonty.simplegraffiti.item.GraffitiItems;
 import com.drinfonty.simplegraffiti.item.SprayCanItem;
 import com.drinfonty.simplegraffiti.net.GraffitiPayloads;
+import com.drinfonty.simplegraffiti.world.StrokeApplier;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
@@ -63,12 +65,12 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 	private InteractionHand sprayHand = InteractionHand.MAIN_HAND;
 	private boolean sprayErases;
 
-	// Where the last sample landed, so the next one can paint the segment between the two rather
-	// than a lone disc. Only valid while the crosshair stays on the same face of the same block:
-	// a stroke that wanders onto a different canvas has to start again, since a canvas cannot be
-	// painted from a point outside itself.
+	// Where the last sample landed, so the next one paints the segment between the two rather than
+	// a lone disc. The anchor may be on a different *block* - a canvas is only 16 texels wide, so a
+	// drag at any normal speed crosses blocks constantly, and a stroke that could not cross them
+	// was just a row of blobs. It must stay on the same face and the same plane, though.
 	private boolean strokeAnchored;
-	private long strokePos;
+	private BlockPos strokePos;
 	private int strokeFace;
 	private int strokeU8;
 	private int strokeV8;
@@ -167,17 +169,20 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		}
 
 		BlockPos pos = BlockPos.of(stamp.pos());
-		Canvas existing = canvases.get(pos, stamp.face());
-		Canvas before = existing == null ? Canvas.empty() : existing;
 		int value = stamp.erase() ? PaintColor.EMPTY : PaintColor.opaque(stamp.rgb());
 
-		Canvas updated = stamp.stroke()
-			? before.withStroke(stamp.fromU8(), stamp.fromV8(), stamp.u8(), stamp.v8(),
-				stamp.brush(), value, null, 0L)
-			: before.withStamp(stamp.u8(), stamp.v8(), stamp.brush(), value, null, 0L);
+		if (stamp.stroke()) {
+			// Replaying our own broadcast is a no-op, because the walk is deterministic and
+			// stamping the same texels the same colour changes nothing.
+			StrokeApplier.apply(stamp.face(), BlockPos.of(stamp.fromPos()), stamp.fromU8(), stamp.fromV8(),
+				pos, stamp.u8(), stamp.v8(), stamp.brush(), value, null, 0L, clientAccess());
+			return;
+		}
 
-		// Null means nothing changed, which is the normal case for the painter replaying their own
-		// prediction. Idempotence is what makes that a no-op rather than a special case.
+		Canvas existing = canvases.get(pos, stamp.face());
+		Canvas before = existing == null ? Canvas.empty() : existing;
+		Canvas updated = before.withStamp(stamp.u8(), stamp.v8(), stamp.brush(), value, null, 0L);
+
 		if (updated == null) {
 			return;
 		}
@@ -354,30 +359,32 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 			flags |= GraffitiPayloads.FLAG_WHOLE_FACE;
 		}
 
-		// Continue the stroke only while still on the same canvas, and never for a whole-face wipe.
-		long packedPos = pos.asLong();
-		boolean continues = strokeAnchored && !wholeFace
-			&& strokePos == packedPos && strokeFace == faceId;
+		// Continue the stroke across blocks, as long as the crosshair stayed on the same face of the
+		// same plane - joining a floor to a higher step would draw a line through the air.
+		boolean continues = strokeAnchored && !wholeFace && strokeFace == faceId
+			&& FaceStroke.normal(faceId, strokePos.getX(), strokePos.getY(), strokePos.getZ())
+				== FaceStroke.normal(faceId, pos.getX(), pos.getY(), pos.getZ());
 
 		if (continues) {
 			flags |= GraffitiPayloads.FLAG_STROKE;
 		}
 
+		BlockPos from = continues ? strokePos : pos;
 		int fromU8 = continues ? strokeU8 : u8;
 		int fromV8 = continues ? strokeV8 : v8;
 
 		if (!sender.sendIfPossible(new GraffitiPayloads.PaintC2S(
-			packedPos, faceId, u8, v8, brush, flags, fromU8, fromV8))) {
+			pos.asLong(), faceId, u8, v8, brush, flags, from.asLong(), fromU8, fromV8))) {
 			return;
 		}
 
 		strokeAnchored = !wholeFace;
-		strokePos = packedPos;
+		strokePos = pos.immutable();
 		strokeFace = faceId;
 		strokeU8 = u8;
 		strokeV8 = v8;
 
-		predict(pos, faceId, fromU8, fromV8, u8, v8, brush, erase, wholeFace, continues,
+		predict(pos, faceId, from, fromU8, fromV8, u8, v8, brush, wholeFace,
 			erase ? PaintColor.EMPTY : PaintColor.opaque(SprayCanItem.colorOf(tool)));
 
 		if (!erase) {
@@ -412,32 +419,60 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		}
 	}
 
-	/** Applies the stamp locally so paint appears at the painter's latency, not the server's. */
-	private void predict(BlockPos pos, int face, int fromU8, int fromV8, int u8, int v8, int brush,
-		boolean erase, boolean wholeFace, boolean stroke, int value) {
-		Canvas existing = canvases.get(pos, face);
-		Canvas before = existing == null ? Canvas.empty() : existing;
-		Canvas updated;
-
+	/** Applies the op locally so paint appears at the painter's latency, not the server's. */
+	private void predict(BlockPos pos, int face, BlockPos from, int fromU8, int fromV8,
+		int u8, int v8, int brush, boolean wholeFace, int value) {
 		if (wholeFace) {
-			updated = before.cleared(null, 0L);
-		} else if (stroke) {
-			updated = before.withStroke(fromU8, fromV8, u8, v8, brush, value, null, 0L);
-		} else {
-			updated = before.withStamp(u8, v8, brush, value, null, 0L);
-		}
+			Canvas existing = canvases.get(pos, face);
+			Canvas cleared = existing == null ? null : existing.cleared(null, 0L);
 
-		if (updated == null) {
+			if (cleared != null) {
+				canvases.remove(pos, face);
+				markDirty(pos);
+			}
+
 			return;
 		}
 
-		if (updated.isEmpty()) {
-			canvases.remove(pos, face);
-		} else {
-			canvases.put(pos, face, updated);
-		}
+		// The same code the server runs, over the same block data, so the two cannot draw
+		// different lines - a separate client implementation is how prediction drifts.
+		StrokeApplier.apply(face, from, fromU8, fromV8, pos, u8, v8, brush, value, null, 0L,
+			clientAccess());
+	}
 
-		markDirty(pos);
+	/**
+	 * The client's view of canvases for the shared stroke code.
+	 *
+	 * <p>Paintability is judged locally against the same rule the server uses. Both sides see the
+	 * same blocks, so they reach the same answer; if they ever did not, the server's correction
+	 * would replace the face anyway.
+	 */
+	private StrokeApplier.CanvasAccess clientAccess() {
+		ClientLevel level = Minecraft.getInstance().level;
+
+		return new StrokeApplier.CanvasAccess() {
+			@Override
+			public Canvas get(BlockPos pos, int face) {
+				return canvases.get(pos, face);
+			}
+
+			@Override
+			public void put(BlockPos pos, int face, Canvas canvas) {
+				if (canvas == null) {
+					canvases.remove(pos, face);
+				} else {
+					canvases.put(pos, face, canvas);
+				}
+
+				markDirty(pos);
+			}
+
+			@Override
+			public boolean mayPaint(BlockPos pos, int face) {
+				return level != null && com.drinfonty.simplegraffiti.world.Paintability.isPaintable(
+					level, pos, Direction.from3DDataValue(face), false);
+			}
+		};
 	}
 
 	private void warnUnavailable() {

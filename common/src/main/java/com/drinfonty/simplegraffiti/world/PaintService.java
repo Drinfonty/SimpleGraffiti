@@ -128,25 +128,33 @@ public final class PaintService {
 
 		int brush = Math.min(request.brush(), config.maxBrushSize);
 		int value = request.erase() ? PaintColor.EMPTY : PaintColor.opaque(SprayCanItem.colorOf(tool));
-		Canvas before = existing == null ? Canvas.empty() : existing;
 		long now = System.currentTimeMillis();
 
-		Canvas updated;
+		boolean changed;
 
 		if (request.wholeFace()) {
-			updated = before.cleared(player.getUUID(), now);
-		} else if (request.stroke()) {
-			// A held drag: paint the segment since the last sample, so the line is continuous
-			// rather than a row of discs spaced by however fast the player moved.
-			updated = before.withStroke(request.fromU8(), request.fromV8(),
-				request.u8(), request.v8(), brush, value, player.getUUID(), now);
+			Canvas cleared = (existing == null ? Canvas.empty() : existing).cleared(player.getUUID(), now);
+			changed = cleared != null;
+
+			if (changed) {
+				chunk.remove(key);
+			}
 		} else {
-			updated = before.withStamp(request.u8(), request.v8(), brush, value, player.getUUID(), now);
+			// A held drag paints the whole segment since the last sample, across every block face it
+			// crosses. Painting only the sample points would give one lone disc per block, which at
+			// any normal drag speed is a row of blobs rather than a line.
+			ServerCanvasAccess access = new ServerCanvasAccess(server, level, player, config);
+			BlockPos from = request.stroke() ? BlockPos.of(request.fromPos()) : pos;
+			int fromU8 = request.stroke() ? request.fromU8() : request.u8();
+			int fromV8 = request.stroke() ? request.fromV8() : request.v8();
+
+			changed = StrokeApplier.apply(request.face(), from, fromU8, fromV8, pos,
+				request.u8(), request.v8(), brush, value, player.getUUID(), now, access);
 		}
 
-		// A stamp that changes nothing costs no charge and is not broadcast: spraying an already
+		// An op that changes nothing costs no charge and is not broadcast: spraying an already
 		// solid wall must not generate traffic (SPEC 4.3).
-		if (updated == null) {
+		if (!changed) {
 			return;
 		}
 
@@ -155,11 +163,7 @@ public final class PaintService {
 			&& !existing.owner().equals(player.getUUID())
 			&& now - existing.timestamp() < CONTENTION_WINDOW_TICKS * 50L;
 
-		if (updated.isEmpty()) {
-			chunk.remove(key);
-		} else {
-			chunk.put(key, updated);
-		}
+		Canvas updated = chunk.get(key);
 
 		spendTool(player, tool, hand, creative, request.erase());
 
@@ -167,7 +171,7 @@ public final class PaintService {
 			level.playSound(null, pos, SoundEvents.SPONGE_ABSORB, SoundSource.PLAYERS, 0.4F, 1.0F);
 		}
 
-		if (contended) {
+		if (contended && updated != null) {
 			// Prediction reorders stamps between two painters, so overlapping texels could differ
 			// forever. Sending the whole face to everyone tracking it is the only thing that
 			// actually converges (SPEC 6.1) - prediction is a latency trick, not a consistency
@@ -176,7 +180,70 @@ public final class PaintService {
 		} else {
 			broadcast(server, level, chunkPos, new GraffitiPayloads.StampS2C(
 				request.pos(), request.face(), request.u8(), request.v8(), brush, request.flags(),
-				request.erase() ? 0 : PaintColor.rgb(value), request.fromU8(), request.fromV8()));
+				request.erase() ? 0 : PaintColor.rgb(value),
+				request.fromPos(), request.fromU8(), request.fromV8()));
+		}
+	}
+
+	/**
+	 * The server's view of which faces a stroke may touch and where their canvases live.
+	 *
+	 * <p>Every block the stroke crosses is checked in its own right - paintability, permission and
+	 * the per-chunk cap - so sweeping over a chest or someone else's claim skips those blocks
+	 * instead of painting them, and a stroke can cross a chunk boundary safely.
+	 */
+	private record ServerCanvasAccess(GraffitiServer server, ServerLevel level, ServerPlayer player,
+		ServerConfig config) implements StrokeApplier.CanvasAccess {
+
+		@Override
+		public Canvas get(BlockPos pos, int face) {
+			CanvasStore store = server.store(level);
+			return store == null ? null : store.get(pos, face);
+		}
+
+		@Override
+		public void put(BlockPos pos, int face, Canvas canvas) {
+			CanvasStore store = server.store(level);
+
+			if (store == null) {
+				return;
+			}
+
+			ChunkCanvases chunk = store.chunkForWrite(ChunkPos.containing(pos));
+			long key = CanvasStore.key(pos, face);
+
+			if (canvas == null) {
+				chunk.remove(key);
+			} else {
+				chunk.put(key, canvas);
+			}
+		}
+
+		@Override
+		public boolean mayPaint(BlockPos pos, int face) {
+			if (!player.getChunkTrackingView().contains(ChunkPos.containing(pos))) {
+				return false;
+			}
+
+			if (!Paintability.isPaintable(level, pos, Direction.from3DDataValue(face), config.restrictToTag)) {
+				return false;
+			}
+
+			if (!mayModify(server, player, pos)) {
+				return false;
+			}
+
+			CanvasStore store = server.store(level);
+
+			if (store == null) {
+				return false;
+			}
+
+			ChunkCanvases chunk = store.chunkForWrite(ChunkPos.containing(pos));
+
+			// The cap refuses new faces while existing ones stay paintable.
+			return chunk.get(CanvasStore.key(pos, face)) != null
+				|| chunk.size() < config.maxCanvasesPerChunk;
 		}
 	}
 

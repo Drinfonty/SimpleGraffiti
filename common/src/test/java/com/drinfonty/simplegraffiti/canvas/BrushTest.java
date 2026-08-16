@@ -48,7 +48,7 @@ class BrushTest {
 		return Math.max(0, Math.min(15, value));
 	}
 
-	@Test
+@Test
 	void matchesTheSpecPseudocodeEverywhere() {
 		// Every quantised hit point at every brush size, not a sample: the whole input space is
 		// 3 * 256 * 256, which is cheap enough to enumerate exhaustively and leaves no corner
@@ -68,7 +68,7 @@ class BrushTest {
 		}
 	}
 
-	@Test
+@Test
 	void isDeterministicAcrossRepeatedApplication() {
 		Random random = new Random(1234L);
 
@@ -87,7 +87,7 @@ class BrushTest {
 		}
 	}
 
-	@Test
+@Test
 	void replayingTheSameStampIsIdempotent() {
 		// This is what lets a predicting client apply the server's echo of its own stamp without
 		// checking whether it was the painter (SPEC 6.1).
@@ -100,7 +100,7 @@ class BrushTest {
 		assertArrayEquals(snapshot, texels);
 	}
 
-	@Test
+@Test
 	void clipsAtTheBorderRatherThanWrapping() {
 		// Paint must not spill onto an adjacent face or block (SPEC 4.3). A large brush in the
 		// corner is the case that would wrap if the bounds were computed with a mask.
@@ -117,7 +117,7 @@ class BrushTest {
 		}
 	}
 
-	@Test
+@Test
 	void erasingUsesTheSameFootprintAsPainting() {
 		// An erase stroke must feather exactly the way a paint stroke does, dither included.
 		int[] painted = new int[Canvas.TEXELS];
@@ -131,7 +131,7 @@ class BrushTest {
 		}
 	}
 
-	@Test
+@Test
 	void everySizePaintsSomethingAndLargerPaintsMore() {
 		int previous = -1;
 
@@ -152,7 +152,7 @@ class BrushTest {
 		}
 	}
 
-	@Test
+@Test
 	void rejectsOutOfRangeInput() {
 		assertThrows(IllegalArgumentException.class,
 			() -> Brush.stamp(new int[Canvas.TEXELS], -1, 0, 0, PaintColor.WHITE));
@@ -164,137 +164,14 @@ class BrushTest {
 			() -> Brush.stamp(new int[16], 0, 0, 0, PaintColor.WHITE));
 	}
 
-	@Test
+@Test
 	void radiiMatchTheSpecTable() {
 		assertEquals(24, Brush.radius(Brush.SIZE_SMALL));
 		assertEquals(40, Brush.radius(Brush.SIZE_MEDIUM));
 		assertEquals(64, Brush.radius(Brush.SIZE_LARGE));
 	}
 
-	/**
-	 * What a player dragging slowly would paint: one stamp at every quantisation step along the path.
-	 *
-	 * <p>Written out independently of {@link Brush#stampLine} so the two can disagree.
-	 */
-	private static int[] slowDrag(int u0, int v0, int u1, int v1, int size) {
-		int[] texels = new int[Canvas.TEXELS];
-		int steps = Math.max(Math.abs(u1 - u0), Math.abs(v1 - v0));
-
-		for (int i = 0; i <= steps; i++) {
-			int u = steps == 0 ? u0 : u0 + ((u1 - u0) * i) / steps;
-			int v = steps == 0 ? v0 : v0 + ((v1 - v0) * i) / steps;
-			Brush.stamp(texels, u, v, size, PaintColor.WHITE);
-		}
-
-		return texels;
-	}
-
-	/**
-	 * The property that actually matters for "dragging gives disconnected blobs": how a stroke looks
-	 * must not depend on how fast the player moved or on how often the game sampled the crosshair.
-	 *
-	 * <p>Deliberately not "every texel along the path is painted" - that is false by design, because
-	 * the Bayer dither gives the brush a soft stippled edge and some texels are only reachable when a
-	 * stamp centre passes almost exactly over them. The honest invariant is equivalence with the
-	 * slowest possible drag, and it is what stops anyone making the walk coarser to save cycles.
-	 */
-	@Test
-	void aFastDragPaintsExactlyWhatASlowDragWould() {
-		Random random = new Random(31337L);
-
-		for (int size = Brush.MIN_SIZE; size <= Brush.MAX_SIZE; size++) {
-			for (int i = 0; i < 300; i++) {
-				int u0 = random.nextInt(256);
-				int v0 = random.nextInt(256);
-				int u1 = random.nextInt(256);
-				int v1 = random.nextInt(256);
-
-				int[] fast = new int[Canvas.TEXELS];
-				Brush.stampLine(fast, u0, v0, u1, v1, size, PaintColor.WHITE);
-
-				assertArrayEquals(slowDrag(u0, v0, u1, v1, size), fast,
-					"fast drag differs from slow drag: " + u0 + "," + v0 + " -> " + u1 + "," + v1);
-			}
-		}
-	}
-
-	@Test
-	void theFastestPossibleDragMatchesTheSlowest() {
-		// Corner to corner in a single sample is the worst case a player can produce: the crosshair
-		// crossed the whole face between two ticks.
-		for (int size = Brush.MIN_SIZE; size <= Brush.MAX_SIZE; size++) {
-			for (int[] ends : new int[][] { {0, 0, 255, 255}, {255, 0, 0, 255}, {0, 128, 255, 128}, {128, 0, 128, 255} }) {
-				int[] fast = new int[Canvas.TEXELS];
-				Brush.stampLine(fast, ends[0], ends[1], ends[2], ends[3], size, PaintColor.WHITE);
-				assertArrayEquals(slowDrag(ends[0], ends[1], ends[2], ends[3], size), fast);
-			}
-		}
-	}
-
-	/**
-	 * Guards the whole point of the feature: a stroke must fill in the middle, not just stamp its two
-	 * ends. Deleting the interpolation loop would still pass every other test in this file.
-	 */
-	@Test
-	void aStrokeFillsBetweenItsEndpointsRatherThanJustStampingThem() {
-		int[] stroke = new int[Canvas.TEXELS];
-		Brush.stampLine(stroke, 24, 128, 232, 128, Brush.SIZE_MEDIUM, PaintColor.WHITE);
-
-		int[] endsOnly = new int[Canvas.TEXELS];
-		Brush.stamp(endsOnly, 24, 128, Brush.SIZE_MEDIUM, PaintColor.WHITE);
-		Brush.stamp(endsOnly, 232, 128, Brush.SIZE_MEDIUM, PaintColor.WHITE);
-
-		int strokePainted = 0;
-		int endsPainted = 0;
-
-		for (int i = 0; i < Canvas.TEXELS; i++) {
-			if (PaintColor.isPainted(stroke[i])) {
-				strokePainted++;
-			}
-
-			if (PaintColor.isPainted(endsOnly[i])) {
-				endsPainted++;
-			}
-		}
-
-		assertTrue(strokePainted > endsPainted * 2,
-			"stroke painted " + strokePainted + " texels, two lone stamps painted " + endsPainted);
-	}
-
-	/**
-	 * With a solid brush the strong property holds: every point the crosshair passed through lands
-	 * inside a painted texel, so a drag is a continuous line at any speed. This could not be
-	 * asserted while the brush dithered its edge, because a dithered texel is deliberately skipped.
-	 */
-	@Test
-	void aStrokeIsSolidAlongItsWholePath() {
-		Random random = new Random(9001L);
-
-		for (int size = Brush.MIN_SIZE; size <= Brush.MAX_SIZE; size++) {
-			for (int i = 0; i < 200; i++) {
-				int u0 = random.nextInt(256);
-				int v0 = random.nextInt(256);
-				int u1 = random.nextInt(256);
-				int v1 = random.nextInt(256);
-
-				int[] texels = new int[Canvas.TEXELS];
-				Brush.stampLine(texels, u0, v0, u1, v1, size, PaintColor.WHITE);
-
-				int span = Math.max(Math.abs(u1 - u0), Math.abs(v1 - v0));
-
-				for (int step = 0; step <= span; step++) {
-					int u = span == 0 ? u0 : u0 + ((u1 - u0) * step) / span;
-					int v = span == 0 ? v0 : v0 + ((v1 - v0) * step) / span;
-
-					assertTrue(PaintColor.isPainted(texels[(v / 16) * Canvas.SIZE + (u / 16)]),
-						"gap at texel " + (u / 16) + "," + (v / 16) + " along stroke "
-							+ u0 + "," + v0 + " -> " + u1 + "," + v1 + " (size " + size + ")");
-				}
-			}
-		}
-	}
-
-	/** A single stamp is a solid disc: no holes anywhere inside its radius. */
+/** A single stamp is a solid disc: no holes anywhere inside its radius. */
 	@Test
 	void aStampIsSolidWithNoHoles() {
 		for (int size = Brush.MIN_SIZE; size <= Brush.MAX_SIZE; size++) {
@@ -314,54 +191,5 @@ class BrushTest {
 				}
 			}
 		}
-	}
-
-	@Test
-	void aStrokeCoversBothEndsAndTheMiddle() {
-		int[] line = new int[Canvas.TEXELS];
-		Brush.stampLine(line, 8, 128, 248, 128, Brush.SIZE_SMALL, PaintColor.WHITE);
-
-		// Every texel column along the path should have been reached, which a row of spaced dots
-		// at the same brush size would not manage.
-		for (int pu = 0; pu < Canvas.SIZE; pu++) {
-			boolean any = false;
-
-			for (int pv = 0; pv < Canvas.SIZE; pv++) {
-				any |= PaintColor.isPainted(line[pv * Canvas.SIZE + pu]);
-			}
-
-			assertTrue(any, "column " + pu + " was skipped by the stroke");
-		}
-	}
-
-	@Test
-	void aZeroLengthStrokeEqualsASingleStamp() {
-		int[] stroke = new int[Canvas.TEXELS];
-		int[] single = new int[Canvas.TEXELS];
-
-		Brush.stampLine(stroke, 100, 100, 100, 100, Brush.SIZE_MEDIUM, PaintColor.WHITE);
-		Brush.stamp(single, 100, 100, Brush.SIZE_MEDIUM, PaintColor.WHITE);
-
-		assertArrayEquals(single, stroke);
-	}
-
-	@Test
-	void strokesAreDeterministicAndIdempotent() {
-		int[] first = new int[Canvas.TEXELS];
-		int[] second = new int[Canvas.TEXELS];
-		Brush.stampLine(first, 20, 40, 200, 190, Brush.SIZE_LARGE, PaintColor.WHITE);
-		Brush.stampLine(second, 20, 40, 200, 190, Brush.SIZE_LARGE, PaintColor.WHITE);
-		assertArrayEquals(first, second);
-
-		assertFalse(Brush.stampLine(first, 20, 40, 200, 190, Brush.SIZE_LARGE, PaintColor.WHITE),
-			"replaying a stroke must be a no-op, or prediction would drift");
-	}
-
-	@Test
-	void strokeRejectsOutOfRangeEndpoints() {
-		assertThrows(IllegalArgumentException.class,
-			() -> Brush.stampLine(new int[Canvas.TEXELS], -1, 0, 10, 10, 0, PaintColor.WHITE));
-		assertThrows(IllegalArgumentException.class,
-			() -> Brush.stampLine(new int[Canvas.TEXELS], 0, 0, 256, 10, 0, PaintColor.WHITE));
 	}
 }

@@ -242,9 +242,18 @@ Brush.stampLine(canvas, u0, v0, u1, v1, size, value)
   sampling tick.
 * The walk is bounded at 256 steps, since neither coordinate can span more than 255 units.
 * A stroke MUST be solid along its whole path: every point on the segment lies in a painted texel.
-* A stroke MUST only ever join two points on the **same canvas**. When the crosshair moves to a
-  different block or face, or leaves a block entirely, the stroke restarts at the new point rather
-  than joining across the gap.
+* A stroke MAY span **many block faces**. Points are mapped into one coordinate system covering the
+  whole face plane — 256 units per block — walked there, and applied to each block the walk crosses.
+  Restricting a stroke to a single canvas is not viable: a canvas is 16 texels wide, so at normal
+  drag speeds almost every sample lands on a new block and the stroke becomes one disc per block.
+* Both endpoints MUST share a face direction and a plane (the same coordinate along that face's
+  normal). A drag from a floor onto a higher step is two strokes, not a line through the air.
+* Each block the stroke crosses is judged on its own for paintability, permission and the chunk cap.
+  A stroke sweeping over an unpaintable block skips it and carries on.
+* A stroke MUST NOT span more than **8 blocks**; the walk is one step per unit, so this bounds the
+  work a single request can demand. Longer segments are treated as a plain stamp.
+* The whole stroke costs **one charge and one payload**, however far it reaches, so dragging fast
+  neither drains the can faster nor multiplies traffic.
 
 ---
 
@@ -389,7 +398,7 @@ Sent once, on player join, only to players whose connection has the channel.
 A client that receives a `protocolVersion` it does not implement MUST log one line and remain
 in capability state `NONE` (§10).
 
-### 7.2 `simple_graffiti:paint` (C2S, play) — 15 bytes
+### 7.2 `simple_graffiti:paint` (C2S, play) — 23 bytes
 
 | Field | Type |
 | :--- | :--- |
@@ -399,20 +408,23 @@ in capability state `NONE` (§10).
 | `v8` | byte `0..255` |
 | `brush` | byte `0..2` |
 | `flags` | byte — bit 0: erase (scrub sponge), bit 1: offhand, bit 2: whole face, bit 3: stroke |
+| `fromPos` | long — the block the previous sample was on |
 | `fromU8` | byte `0..255` — previous sample point, meaningful only with the stroke bit |
 | `fromV8` | byte `0..255` |
 
 With the stroke bit set, the server paints the segment `from → (u8, v8)` (§4.4) instead of a
-single disc. The two points are always on the canvas named by `pos`/`face`; a client MUST NOT set
-the bit when the previous sample was on a different canvas. Without the bit, `fromU8`/`fromV8`
-MUST be ignored.
+single disc. The previous sample MAY be on a **different block**: a canvas is only 16 texels wide,
+so a drag at any normal speed crosses several blocks a second, and a stroke that could not cross
+block boundaries degenerates into one lone disc per block. Both points MUST lie on the same face
+direction and the same plane; the server treats any other combination, and any segment longer than
+§4.4's bound, as a plain stamp. Without the bit, `fromPos`/`fromU8`/`fromV8` MUST be ignored.
 
 The colour is **not** sent: the server reads it from the can the player is holding, so a
 client cannot paint a colour it does not have. Out-of-range `face` or `brush` MUST cause the
 packet to be dropped, not clamped. `flags` bit 2 is valid only together with bit 0 (a whole
 face clear is an erase).
 
-### 7.3 `simple_graffiti:stamp` (S2C, play) — 18 bytes
+### 7.3 `simple_graffiti:stamp` (S2C, play) — 26 bytes
 
 The `paint` fields plus `rgb` (3 bytes, big-endian `R G B`), which recipients expand to
 `0xFF_RR_GG_BB`. When `flags` bit 0 is set the colour bytes MUST be `0` and recipients apply
@@ -464,7 +476,7 @@ canvas of 256 distinct colours; a single-colour tag is a handful of bytes.
 
 ### 7.8 Bandwidth bounds
 
-* A continuous sprayer generates ≤ 4 × 18 bytes/s = 72 B/s per observer, regardless of how fast
+* A continuous sprayer generates ≤ 4 × 26 bytes/s = 104 B/s per observer, regardless of how fast
   they drag: a whole segment costs one payload, which is the point of carrying the previous point
   rather than sampling more often.
 * Chunk sync for a chunk at the 1 024-canvas cap is ≤ 1 MB uncompressed pre-RLE and MUST be

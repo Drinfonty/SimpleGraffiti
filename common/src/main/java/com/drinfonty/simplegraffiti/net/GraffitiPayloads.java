@@ -123,7 +123,8 @@ public final class GraffitiPayloads {
 	 * SPEC 7.2, 13 bytes. The colour is deliberately absent: the server reads it from the can the
 	 * player is holding, so a client cannot paint a colour it does not have.
 	 */
-	public record PaintC2S(long pos, int face, int u8, int v8, int brush, int flags, int fromU8, int fromV8)
+	public record PaintC2S(long pos, int face, int u8, int v8, int brush, int flags,
+		long fromPos, int fromU8, int fromV8)
 		implements CustomPacketPayload {
 
 		public PaintC2S {
@@ -142,7 +143,7 @@ public final class GraffitiPayloads {
 
 		/** A one-shot stamp; the stroke origin is ignored. */
 		public static PaintC2S stamp(long pos, int face, int u8, int v8, int brush, int flags) {
-			return new PaintC2S(pos, face, u8, v8, brush, flags, u8, v8);
+			return new PaintC2S(pos, face, u8, v8, brush, flags, pos, u8, v8);
 		}
 
 		public boolean stroke() {
@@ -157,6 +158,7 @@ public final class GraffitiPayloads {
 				buffer.writeByte(payload.v8);
 				buffer.writeByte(payload.brush);
 				buffer.writeByte(payload.flags);
+				buffer.writeLong(payload.fromPos);
 				buffer.writeByte(payload.fromU8);
 				buffer.writeByte(payload.fromV8);
 			},
@@ -167,6 +169,7 @@ public final class GraffitiPayloads {
 				readUnsignedByte(buffer),
 				readUnsignedByte(buffer),
 				readUnsignedByte(buffer),
+				buffer.readLong(),
 				readUnsignedByte(buffer),
 				readUnsignedByte(buffer)));
 
@@ -194,7 +197,7 @@ public final class GraffitiPayloads {
 	 * deterministic and idempotent.
 	 */
 	public record StampS2C(long pos, int face, int u8, int v8, int brush, int flags, int rgb,
-		int fromU8, int fromV8) implements CustomPacketPayload {
+		long fromPos, int fromU8, int fromV8) implements CustomPacketPayload {
 
 		public StampS2C {
 			checkFace(face);
@@ -225,6 +228,7 @@ public final class GraffitiPayloads {
 				buffer.writeByte(payload.rgb >>> 16);
 				buffer.writeByte(payload.rgb >>> 8);
 				buffer.writeByte(payload.rgb);
+				buffer.writeLong(payload.fromPos);
 				buffer.writeByte(payload.fromU8);
 				buffer.writeByte(payload.fromV8);
 			},
@@ -238,10 +242,11 @@ public final class GraffitiPayloads {
 				int red = readUnsignedByte(buffer);
 				int green = readUnsignedByte(buffer);
 				int blue = readUnsignedByte(buffer);
+				long fromPos = buffer.readLong();
 				int fromU8 = readUnsignedByte(buffer);
 				int fromV8 = readUnsignedByte(buffer);
 				return new StampS2C(pos, face, u8, v8, brush, flags,
-					(red << 16) | (green << 8) | blue, fromU8, fromV8);
+					(red << 16) | (green << 8) | blue, fromPos, fromU8, fromV8);
 			});
 
 		public boolean erase() {

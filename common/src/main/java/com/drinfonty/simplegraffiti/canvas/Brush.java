@@ -101,47 +101,6 @@ public final class Brush {
 		return changed;
 	}
 
-	/**
-	 * Stamps a continuous stroke from {@code (u0, v0)} to {@code (u1, v1)}.
-	 *
-	 * <p>This is what makes a drag draw a line instead of a row of blobs. Sampling the crosshair on
-	 * a timer and stamping one disc per sample can only ever produce dots spaced by however fast the
-	 * player moved; the gap between two samples has to be filled in deliberately, exactly as a paint
-	 * program interpolates between two mouse events.
-	 *
-	 * <p>The walk advances one quantisation unit - 1/16 of a texel - at a time, which is the finest
-	 * step the wire format can express. That is deliberately the *finest* possible rather than
-	 * something cheaper: it makes a fast drag produce byte-identical paint to dragging the same path
-	 * infinitely slowly, so how a stroke looks never depends on the player's mouse speed or on how
-	 * often the game sampled the crosshair.
-	 *
-	 * <p>The whole walk is integer, like {@link #stamp}, so the client's prediction and the server's
-	 * authority stay bit-identical. It is bounded by construction: the longest possible span is 255
-	 * units, so the loop runs at most 256 times however fast the player flicks the mouse.
-	 */
-	public static boolean stampLine(int[] texels, int u0, int v0, int u1, int v1, int size, int value) {
-		if (u0 < 0 || u0 > 255 || v0 < 0 || v0 > 255) {
-			throw new IllegalArgumentException("stroke start out of range: " + u0 + "," + v0);
-		}
-
-		// Validates the end point, the canvas length and the brush size, and paints the far end.
-		boolean changed = stamp(texels, u1, v1, size, value);
-
-		int du = u1 - u0;
-		int dv = v1 - v0;
-		int steps = Math.max(Math.abs(du), Math.abs(dv));
-
-		// steps == 0 means both points are the same, and the stamp above already covered it.
-		for (int i = 0; i < steps; i++) {
-			// Integer division against a fixed step count - deterministic on every platform.
-			int u = u0 + (du * i) / steps;
-			int v = v0 + (dv * i) / steps;
-			changed |= stamp(texels, u, v, size, value);
-		}
-
-		return changed;
-	}
-
 	private static int clampTexel(int value) {
 		if (value < 0) {
 			return 0;

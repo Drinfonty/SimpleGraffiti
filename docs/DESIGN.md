@@ -251,9 +251,13 @@ sides, so:
   either on or off per texel, which is what keeps the renderer in the `CUTOUT` layer. (An earlier
   Bayer-dithered edge was meant to read as soft spray falloff; in game it read as speckle, and it
   made strokes dotty at the smallest size, so it was removed after playtesting.)
-* A held drag carries the previous sample point, and `Brush.stampLine` walks the segment one
-  quantisation unit at a time. Without that, a drag is only ever a row of discs spaced by how fast
-  the player moved — sampling on a timer cannot produce a line on its own.
+* A held drag carries the previous sample point *and the block it was on*, and `FaceStroke` walks
+  the segment one quantisation unit at a time across every face it crosses. Two separate mistakes
+  were needed to get this right. Sampling on a timer cannot draw a line at all — the gap between
+  samples has to be filled deliberately. And filling it only *within one canvas* is nearly useless,
+  because a canvas is 16 texels wide, so at normal drag speeds almost every sample lands on a new
+  block: the result is still one disc per block. `StrokeApplier` is shared by the predicting client
+  and the deciding server for the same reason the brush is — two implementations drift.
 
 Because the same op replays identically everywhere, a spray costs **13 bytes on the wire**
 (§7) instead of a canvas diff, and prediction cannot drift from authority.
