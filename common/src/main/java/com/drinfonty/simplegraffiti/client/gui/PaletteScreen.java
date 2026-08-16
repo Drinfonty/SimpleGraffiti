@@ -1,5 +1,8 @@
 package com.drinfonty.simplegraffiti.client.gui;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.drinfonty.simplegraffiti.GraffitiClient;
 import com.drinfonty.simplegraffiti.canvas.Brush;
 import com.drinfonty.simplegraffiti.canvas.PaintColor;
@@ -24,13 +27,21 @@ import net.minecraft.world.item.ItemStack;
  * and the eyedropper reaches any block's colour in the world - so it is built from stock widgets
  * and stays deliberately plain.
  *
- * <p>An invalid hex entry disables the confirm button with a visible reason instead of throwing,
- * which is why {@link PaintColor#parseHex} returns -1 rather than raising.
+ * <p>Every position comes from one of the {@code …X}/{@code …Y} helpers below, because drawing and
+ * hit-testing used to compute the swatch grid separately and could disagree about where a swatch
+ * was. Layout is derived from the panel rather than hardcoded, so widths that no longer fit show up
+ * as an assertion in {@link #init} rather than as a button drawn underneath another one.
  */
 public class PaletteScreen extends Screen {
-	private static final int PANEL_WIDTH = 240;
-	private static final int PANEL_HEIGHT = 190;
+	private static final int MARGIN = 8;
 	private static final int SWATCH = 14;
+	private static final int SWATCH_GAP = 1;
+	private static final int ROW_HEIGHT = 20;
+
+	/** Wide enough for all 16 dye swatches plus both margins - the row is what sets the width. */
+	private static final int PANEL_WIDTH =
+		MARGIN * 2 + DyeColor.values().length * (SWATCH + SWATCH_GAP) - SWATCH_GAP;
+	private static final int PANEL_HEIGHT = 210;
 
 	private int red;
 	private int green;
@@ -38,12 +49,56 @@ public class PaletteScreen extends Screen {
 
 	private EditBox hexField;
 	private Button confirm;
+	private final List<ChannelSlider> sliders = new ArrayList<>();
+	private final List<Button> brushButtons = new ArrayList<>();
 
 	/** Suppresses the responder while the field is being rewritten from the sliders. */
 	private boolean updatingHex;
 
 	public PaletteScreen() {
 		super(Component.translatable("screen.simple_graffiti.palette"));
+	}
+
+	private int left() {
+		return (width - PANEL_WIDTH) / 2;
+	}
+
+	private int top() {
+		return (height - PANEL_HEIGHT) / 2;
+	}
+
+	private int contentWidth() {
+		return PANEL_WIDTH - MARGIN * 2;
+	}
+
+	private int controlRowY() {
+		return top() + 100;
+	}
+
+	private int swatchRowY() {
+		return top() + 132;
+	}
+
+	private int recentRowY() {
+		return swatchRowY() + SWATCH + 6;
+	}
+
+	/** The x of swatch {@code index} in either swatch row. */
+	private int swatchX(int index) {
+		return left() + MARGIN + index * (SWATCH + SWATCH_GAP);
+	}
+
+	/** Which swatch a mouse x falls on, or -1 when it is in a gap or outside the row. */
+	private int swatchAt(double mouseX, int count) {
+		for (int i = 0; i < count; i++) {
+			int x = swatchX(i);
+
+			if (mouseX >= x && mouseX < x + SWATCH) {
+				return i;
+			}
+		}
+
+		return -1;
 	}
 
 	@Override
@@ -60,53 +115,90 @@ public class PaletteScreen extends Screen {
 		green = (rgb >> 8) & 0xFF;
 		blue = rgb & 0xFF;
 
-		int left = (width - PANEL_WIDTH) / 2;
-		int top = (height - PANEL_HEIGHT) / 2;
+		sliders.clear();
+		brushButtons.clear();
 
-		addRenderableWidget(new ChannelSlider(left + 8, top + 24, PANEL_WIDTH - 16, 20,
+		int left = left();
+		int top = top();
+
+		sliders.add(addRenderableWidget(new ChannelSlider(left + MARGIN, top + 24, contentWidth(), ROW_HEIGHT,
 			"screen.simple_graffiti.red", red, value -> {
 				red = value;
-				syncHexField();
-			}));
-		addRenderableWidget(new ChannelSlider(left + 8, top + 48, PANEL_WIDTH - 16, 20,
+				onChannelDragged();
+			})));
+		sliders.add(addRenderableWidget(new ChannelSlider(left + MARGIN, top + 48, contentWidth(), ROW_HEIGHT,
 			"screen.simple_graffiti.green", green, value -> {
 				green = value;
-				syncHexField();
-			}));
-		addRenderableWidget(new ChannelSlider(left + 8, top + 72, PANEL_WIDTH - 16, 20,
+				onChannelDragged();
+			})));
+		sliders.add(addRenderableWidget(new ChannelSlider(left + MARGIN, top + 72, contentWidth(), ROW_HEIGHT,
 			"screen.simple_graffiti.blue", blue, value -> {
 				blue = value;
-				syncHexField();
-			}));
+				onChannelDragged();
+			})));
 
-		hexField = new EditBox(font, left + 8, top + 100, 80, 20,
+		// The control row is laid out left to right and must not run past the panel: hex field,
+		// then the live preview, then one button per brush size.
+		int hexWidth = 76;
+		int previewWidth = 28;
+		int brushWidth = 46;
+		int brushCount = Brush.MAX_SIZE - Brush.MIN_SIZE + 1;
+
+		hexField = new EditBox(font, left + MARGIN, controlRowY(), hexWidth, ROW_HEIGHT,
 			Component.translatable("screen.simple_graffiti.hex"));
 		hexField.setMaxLength(7);
 		hexField.setValue(PaintColor.toHex(rgb()));
 		hexField.setResponder(this::onHexTyped);
 		addRenderableWidget(hexField);
 
+		int brushLeft = left + MARGIN + hexWidth + 6 + previewWidth + 6;
+
 		for (int size = Brush.MIN_SIZE; size <= Brush.MAX_SIZE; size++) {
 			int brush = size;
-			addRenderableWidget(Button.builder(
+			Button button = Button.builder(
 					Component.translatable("screen.simple_graffiti.brush." + size),
-					button -> {
+					b -> {
 						if (client != null) {
 							client.setBrushSize(brush);
+							markSelectedBrush(brush);
 						}
 					})
-				.bounds(left + 96 + size * 46, top + 100, 44, 20)
-				.build());
+				.bounds(brushLeft + (size - Brush.MIN_SIZE) * (brushWidth + 2), controlRowY(),
+					brushWidth, ROW_HEIGHT)
+				.build();
+			brushButtons.add(addRenderableWidget(button));
+		}
+
+		if (brushLeft + brushCount * (brushWidth + 2) - 2 > left + PANEL_WIDTH - MARGIN) {
+			// Not an exception: a cramped row is a cosmetic problem, and throwing here would take
+			// the whole screen down. It is worth a log line so it is not discovered in a
+			// screenshot months later, which is exactly how the old overlap was found.
+			com.drinfonty.simplegraffiti.SimpleGraffiti.LOGGER.warn(
+				"Palette control row does not fit the panel; buttons may overlap");
 		}
 
 		confirm = Button.builder(Component.translatable("screen.simple_graffiti.apply"), button -> apply())
-			.bounds(left + PANEL_WIDTH - 88, top + PANEL_HEIGHT - 28, 80, 20)
+			.bounds(left + PANEL_WIDTH - MARGIN - 80, top + PANEL_HEIGHT - 30, 80, ROW_HEIGHT)
 			.build();
 		addRenderableWidget(confirm);
+
+		markSelectedBrush(client == null ? Brush.SIZE_MEDIUM : client.brushSize());
+	}
+
+	/** The current size is shown by being the one button you cannot press. */
+	private void markSelectedBrush(int size) {
+		for (int i = 0; i < brushButtons.size(); i++) {
+			brushButtons.get(i).active = (i + Brush.MIN_SIZE) != size;
+		}
 	}
 
 	private int rgb() {
 		return (red << 16) | (green << 8) | blue;
+	}
+
+	/** A slider moved: the hex field follows, but the sliders are already where the user put them. */
+	private void onChannelDragged() {
+		syncHexField();
 	}
 
 	private void syncHexField() {
@@ -118,6 +210,15 @@ public class PaletteScreen extends Screen {
 		hexField.setValue(PaintColor.toHex(rgb()));
 		updatingHex = false;
 		confirm.active = true;
+	}
+
+	/** Moves the sliders to match a colour chosen elsewhere - a swatch, or the hex field. */
+	private void syncSliders() {
+		if (sliders.size() == 3) {
+			sliders.get(0).setChannel(red);
+			sliders.get(1).setChannel(green);
+			sliders.get(2).setChannel(blue);
+		}
 	}
 
 	private void onHexTyped(String text) {
@@ -138,12 +239,17 @@ public class PaletteScreen extends Screen {
 		red = (parsed >> 16) & 0xFF;
 		green = (parsed >> 8) & 0xFF;
 		blue = parsed & 0xFF;
+
+		// Without this the sliders keep showing whatever they last read, and the panel
+		// contradicts itself: hex saying one colour, sliders another, preview a third.
+		syncSliders();
 	}
 
 	private void selectPreset(int rgb) {
 		red = (rgb >> 16) & 0xFF;
 		green = (rgb >> 8) & 0xFF;
 		blue = rgb & 0xFF;
+		syncSliders();
 		syncHexField();
 	}
 
@@ -179,17 +285,13 @@ public class PaletteScreen extends Screen {
 
 	@Override
 	public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubled) {
-		int left = (width - PANEL_WIDTH) / 2;
-		int top = (height - PANEL_HEIGHT) / 2;
-		int swatchTop = top + 128;
-
 		double mouseX = event.x();
 		double mouseY = event.y();
 
-		if (mouseY >= swatchTop && mouseY < swatchTop + SWATCH) {
-			int index = (int) ((mouseX - (left + 8)) / (SWATCH + 1));
+		if (mouseY >= swatchRowY() && mouseY < swatchRowY() + SWATCH) {
+			int index = swatchAt(mouseX, DyeColor.values().length);
 
-			if (index >= 0 && index < DyeColor.values().length) {
+			if (index >= 0) {
 				selectPreset(DyeColor.values()[index].getTextureDiffuseColor() & 0xFFFFFF);
 				return true;
 			}
@@ -197,11 +299,12 @@ public class PaletteScreen extends Screen {
 
 		GraffitiClient client = GraffitiClient.get();
 
-		if (client != null && mouseY >= swatchTop + SWATCH + 6 && mouseY < swatchTop + SWATCH * 2 + 6) {
-			int index = (int) ((mouseX - (left + 8)) / (SWATCH + 1));
+		if (client != null && mouseY >= recentRowY() && mouseY < recentRowY() + SWATCH) {
+			List<String> recent = client.config().recentColors;
+			int index = swatchAt(mouseX, recent.size());
 
-			if (index >= 0 && index < client.config().recentColors.size()) {
-				int parsed = PaintColor.parseHex(client.config().recentColors.get(index));
+			if (index >= 0) {
+				int parsed = PaintColor.parseHex(recent.get(index));
 
 				if (parsed >= 0) {
 					selectPreset(parsed);
@@ -215,42 +318,40 @@ public class PaletteScreen extends Screen {
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-		int left = (width - PANEL_WIDTH) / 2;
-		int top = (height - PANEL_HEIGHT) / 2;
+		int left = left();
+		int top = top();
 
 		graphics.fill(left, top, left + PANEL_WIDTH, top + PANEL_HEIGHT, 0xC0101010);
-		graphics.text(font, title, left + 8, top + 8, 0xFFFFFFFF);
+		graphics.text(font, title, left + MARGIN, top + MARGIN, 0xFFFFFFFF);
 
 		super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
-		// The preview swatch sits next to the hex field, so what is typed and what will be
-		// sprayed are visible in the same glance.
-		graphics.fill(left + PANEL_WIDTH - 40, top + 100, left + PANEL_WIDTH - 8, top + 120,
+		// The preview sits between the hex field and the brush buttons, in the gap left for it.
+		int previewX = left + MARGIN + 76 + 6;
+		graphics.fill(previewX, controlRowY(), previewX + 28, controlRowY() + ROW_HEIGHT,
 			PaintColor.opaque(rgb()));
 
-		int swatchTop = top + 128;
 		DyeColor[] dyes = DyeColor.values();
 
 		for (int i = 0; i < dyes.length; i++) {
-			int x = left + 8 + i * (SWATCH + 1);
-			graphics.fill(x, swatchTop, x + SWATCH, swatchTop + SWATCH,
+			graphics.fill(swatchX(i), swatchRowY(), swatchX(i) + SWATCH, swatchRowY() + SWATCH,
 				PaintColor.opaque(dyes[i].getTextureDiffuseColor()));
 		}
 
 		GraffitiClient client = GraffitiClient.get();
 
 		if (client != null) {
-			int recentTop = swatchTop + SWATCH + 6;
+			List<String> recent = client.config().recentColors;
 
-			for (int i = 0; i < client.config().recentColors.size(); i++) {
-				int parsed = PaintColor.parseHex(client.config().recentColors.get(i));
+			for (int i = 0; i < recent.size(); i++) {
+				int parsed = PaintColor.parseHex(recent.get(i));
 
 				if (parsed < 0) {
 					continue;
 				}
 
-				int x = left + 8 + i * (SWATCH + 1);
-				graphics.fill(x, recentTop, x + SWATCH, recentTop + SWATCH, PaintColor.opaque(parsed));
+				graphics.fill(swatchX(i), recentRowY(), swatchX(i) + SWATCH, recentRowY() + SWATCH,
+					PaintColor.opaque(parsed));
 			}
 		}
 
@@ -258,7 +359,7 @@ public class PaletteScreen extends Screen {
 			ItemStack held = minecraft.player.getMainHandItem();
 			graphics.text(font, Component.translatable("tooltip.simple_graffiti.charges",
 					SprayCanItem.remainingCharges(held), held.getMaxDamage()),
-				left + 8, top + PANEL_HEIGHT - 22, 0xFFAAAAAA);
+				left + MARGIN, top + PANEL_HEIGHT - 24, 0xFFAAAAAA);
 		}
 	}
 
@@ -282,6 +383,18 @@ public class PaletteScreen extends Screen {
 
 		private int channelValue() {
 			return (int) Math.round(value * 255.0);
+		}
+
+		/**
+		 * Moves the handle to match a colour set elsewhere.
+		 *
+		 * <p>Deliberately does not call {@code applyValue}: this is the panel telling the slider
+		 * where the colour already is, not the slider announcing a change, and routing it back
+		 * would loop.
+		 */
+		private void setChannel(int channel) {
+			value = Math.clamp(channel, 0, 255) / 255.0;
+			updateMessage();
 		}
 
 		@Override
