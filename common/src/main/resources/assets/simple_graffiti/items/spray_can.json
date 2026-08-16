@@ -1,16 +1,19 @@
 {
   "model": {
-    "type": "minecraft:model",
-    "model": "simple_graffiti:item/spray_can",
-    "tints": [
+    "type": "minecraft:select",
+    "property": "minecraft:display_context",
+    "cases": [
       {
-        "type": "minecraft:constant",
-        "value": -1
-      },
-      {
-        "type": "minecraft:dye",
-        "default": -1
+        "when": "gui",
+        "model": {
+          "type": "minecraft:model",
+          "model": "simple_graffiti:item/spray_can_icon"
+        }
       }
-    ]
+    ],
+    "fallback": {
+      "type": "minecraft:model",
+      "model": "simple_graffiti:item/spray_can"
+    }
   }
 }
