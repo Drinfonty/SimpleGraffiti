@@ -2,7 +2,7 @@
   "sources": [
     {
       "type": "minecraft:single",
-      "resource": "simple_graffiti:paint/spray"
+      "resource": "simple_graffiti:block/paint/spray"
     }
   ]
 }
