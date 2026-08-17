@@ -16,7 +16,8 @@ import com.drinfonty.simplegraffiti.client.render.PaintSprites;
 import net.minecraft.client.renderer.block.BlockAndTintGetter;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
-import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
+import com.mojang.blaze3d.platform.Transparency;
+
 import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.client.resources.model.sprite.Material;
 import net.minecraft.core.BlockPos;
@@ -119,14 +120,23 @@ public class GraffitiDynamicModel extends DelegateBlockStateModel implements Dyn
 
 			MutableQuad quad = new MutableQuad();
 
+			// Set the material before anything else, and through the Material.Baked overload
+			// rather than by hand. Two separate crashes came from doing this piecemeal: UVs are
+			// mapped into the sprite's atlas region, so the sprite must exist before they are
+			// touched, and baking additionally demands an item render type - passing null for it
+			// threw a second time. This overload derives the chunk layer *and* the item render
+			// type from the transparency, so neither can be left out. TRANSPARENT is what
+			// ChunkSectionLayer.byTransparency maps to CUTOUT: alpha-tested, which is what paint
+			// needs.
+			quad.setSprite(new Material.Baked(PaintSprites.paint(), false), Transparency.TRANSPARENT);
+			quad.setDirection(direction);
+
 			for (int vertex = 0; vertex < 4; vertex++) {
 				quad.setPosition(vertex,
 					corners[vertex * 3], corners[vertex * 3 + 1], corners[vertex * 3 + 2]);
 				quad.setUvFromSprite(vertex, uOf(vertex), vOf(vertex));
 			}
 
-			quad.setSprite(PaintSprites.paint(), ChunkSectionLayer.CUTOUT, null);
-			quad.setDirection(direction);
 			quad.setColor(rectangle.argb());
 			quad.setTintIndex(-1);
 			quad.setShade(true);

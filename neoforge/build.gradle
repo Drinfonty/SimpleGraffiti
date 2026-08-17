@@ -22,6 +22,15 @@ neoForge {
 				// -PtestJar, so that run stays a faithful rehearsal of what a player sees.
 				systemProperty 'simple_graffiti.debug', 'true'
 			}
+
+			// -PquickPlay=<save name> boots straight into a world instead of the title screen.
+			// The render path only runs once a chunk is meshed, so verifying it without a human
+			// at the keyboard needs this - a crash in the block mesher is invisible from the
+			// menu.
+			if (project.hasProperty('quickPlay')) {
+				programArgument('--quickPlaySingleplayer')
+				programArgument(project.property('quickPlay').toString())
+			}
 		}
 
 		// Unlike Checkbox this mod has a server side, and singleplayer alone cannot
