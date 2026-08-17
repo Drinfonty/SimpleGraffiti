@@ -9,6 +9,7 @@ import java.util.UUID;
 import com.drinfonty.simplegraffiti.canvas.Brush;
 import com.drinfonty.simplegraffiti.canvas.Canvas;
 import com.drinfonty.simplegraffiti.canvas.FaceStroke;
+import com.drinfonty.simplegraffiti.canvas.PaintColor;
 
 import net.minecraft.core.BlockPos;
 
@@ -23,6 +24,18 @@ import net.minecraft.core.BlockPos;
  * one never sees a half-drawn stroke.
  */
 public final class StrokeApplier {
+	/**
+	 * Notified of the previous colour of every texel an op actually changed.
+	 *
+	 * <p>Exists so the client can spawn erase particles in the colour that was genuinely scrubbed
+	 * off, and spawn none when nothing came off. Guessing from the canvas beforehand cannot do
+	 * either: a brush over bare stone on an otherwise painted face looks the same as a brush over
+	 * paint, and any sampling wide enough to find a colour reliably finds the wrong one.
+	 */
+	public interface ChangeSink {
+		void changed(int previousArgb);
+	}
+
 	/** How the caller reaches canvases and decides which faces may be painted at all. */
 	public interface CanvasAccess {
 		/** The current canvas for a face, or null when it has never been painted. */
@@ -47,9 +60,20 @@ public final class StrokeApplier {
 	 */
 	public static boolean apply(int face, BlockPos from, int fromU8, int fromV8,
 		BlockPos to, int u8, int v8, int size, int value, UUID painter, long now, CanvasAccess access) {
+		return apply(face, from, fromU8, fromV8, to, u8, v8, size, value, painter, now, access, null);
+	}
+
+	/**
+	 * @param changes notified of the previous colour of each texel that changed, or null when the
+	 *                caller does not care
+	 * @return true when at least one canvas changed
+	 */
+	public static boolean apply(int face, BlockPos from, int fromU8, int fromV8,
+		BlockPos to, int u8, int v8, int size, int value, UUID painter, long now,
+		CanvasAccess access, ChangeSink changes) {
 
 		int normal = FaceStroke.normal(face, to.getX(), to.getY(), to.getZ());
-		Walker walker = new Walker(face, normal, size, value, painter, now, access);
+		Walker walker = new Walker(face, normal, size, value, painter, now, access, changes);
 
 		int toU = FaceStroke.encodeU(face, FaceStroke.blockU(face, to.getX(), to.getY(), to.getZ()), u8);
 		int toV = FaceStroke.encodeV(face, FaceStroke.blockV(face, to.getX(), to.getY(), to.getZ()), v8);
@@ -80,7 +104,7 @@ public final class StrokeApplier {
 	/** A single stamp is just a stroke with no distance to cover, so it bleeds the same way. */
 	public static boolean applyStamp(int face, BlockPos pos, int u8, int v8, int size, int value,
 		UUID painter, long now, CanvasAccess access) {
-		return apply(face, pos, u8, v8, pos, u8, v8, size, value, painter, now, access);
+		return apply(face, pos, u8, v8, pos, u8, v8, size, value, painter, now, access, null);
 	}
 
 	/**
@@ -101,10 +125,19 @@ public final class StrokeApplier {
 		private final UUID painter;
 		private final long now;
 		private final CanvasAccess access;
+		private final ChangeSink changes;
 		private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 
 		/** Working copies keyed by the block's face-plane coordinates. */
 		private final Map<Long, int[]> working = new LinkedHashMap<>();
+
+		/**
+		 * What each block looked like before this op, for reporting what changed.
+		 *
+		 * <p>Held by reference rather than copied: a published canvas is never mutated, so the
+		 * array cannot change underneath us while the walk runs.
+		 */
+		private final Map<Long, int[]> before = new LinkedHashMap<>();
 
 		/** Blocks that may not be painted, remembered so they are only asked about once. */
 		private final Set<Long> refused = new HashSet<>();
@@ -113,7 +146,8 @@ public final class StrokeApplier {
 
 		private boolean changed;
 
-		private Walker(int face, int normal, int size, int value, UUID painter, long now, CanvasAccess access) {
+		private Walker(int face, int normal, int size, int value, UUID painter, long now,
+			CanvasAccess access, ChangeSink changes) {
 			this.face = face;
 			this.normal = normal;
 			this.size = size;
@@ -122,6 +156,7 @@ public final class StrokeApplier {
 			this.painter = painter;
 			this.now = now;
 			this.access = access;
+			this.changes = changes;
 		}
 
 		private static long key(int blockU, int blockV) {
@@ -168,6 +203,7 @@ public final class StrokeApplier {
 				Canvas existing = access.get(cursor, face);
 				canvas = existing == null ? new int[Canvas.TEXELS] : existing.texels().clone();
 				working.put(key, canvas);
+				before.put(key, existing == null ? null : existing.texels());
 			}
 
 			if (Brush.stampOffCanvas(canvas, localU, localV, size, value)) {
@@ -192,6 +228,10 @@ public final class StrokeApplier {
 					continue;
 				}
 
+				if (changes != null) {
+					reportChanges(before.get(key), entry.getValue());
+				}
+
 				moveCursor((int) (key >> 32), (int) key);
 				Canvas updated = Canvas.ofOwned(entry.getValue(), painter, now);
 				access.put(cursor, face, updated.isEmpty() ? null : updated);
@@ -199,7 +239,19 @@ public final class StrokeApplier {
 			}
 
 			working.clear();
+			before.clear();
 			touched.clear();
+		}
+
+		/** Reports the previous colour of every texel this op actually altered. */
+		private void reportChanges(int[] original, int[] result) {
+			for (int i = 0; i < Canvas.TEXELS; i++) {
+				int was = original == null ? PaintColor.EMPTY : original[i];
+
+				if (was != result[i]) {
+					changes.changed(was);
+				}
+			}
 		}
 	}
 }

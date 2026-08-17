@@ -18,6 +18,8 @@ import com.drinfonty.simplegraffiti.item.SprayCanItem;
 import com.drinfonty.simplegraffiti.net.GraffitiPayloads;
 import com.drinfonty.simplegraffiti.world.StrokeApplier;
 
+import it.unimi.dsi.fastutil.ints.Int2IntMap;
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.client.Minecraft;
@@ -393,12 +395,17 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		strokeU8 = u8;
 		strokeV8 = v8;
 
-		// Sampled before the prediction runs, because that is what removes the paint locally -
-		// afterwards there is nothing left to take the colour of.
-		int erased = erase ? sampleColorUnder(pos, faceId, u8, v8) : -1;
+		// Counts the colour of every texel the erase actually clears, so the flecks match the paint
+		// that came off and none appear when nothing did.
+		Int2IntOpenHashMap removed = erase ? new Int2IntOpenHashMap() : null;
 
 		predict(pos, faceId, from, fromU8, fromV8, u8, v8, brush, wholeFace,
-			erase ? PaintColor.EMPTY : PaintColor.opaque(SprayCanItem.colorOf(tool)));
+			erase ? PaintColor.EMPTY : PaintColor.opaque(SprayCanItem.colorOf(tool)),
+			removed == null ? null : previous -> {
+				if (PaintColor.isPainted(previous)) {
+					removed.addTo(PaintColor.rgb(previous), 1);
+				}
+			});
 
 		if (--feedbackCooldown > 0) {
 			return;
@@ -408,11 +415,11 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 
 		if (erase) {
 			// No sound here: the server plays block.sponge.absorb for everyone nearby, and only
-			// when something actually changed. Particles are purely local decoration, so they are
-			// skipped when there was no paint to remove - scrubbing bare stone should look like
-			// nothing is happening, because nothing is.
-			if (erased >= 0) {
-				spawnEraseParticles(client, hit, face, erased);
+			// when something actually changed. Particles are purely local decoration, and an
+			// empty map means this stroke took no paint off - scrubbing bare stone should look
+			// like nothing is happening, because nothing is.
+			if (!removed.isEmpty()) {
+				spawnEraseParticles(client, hit, face, dominantColor(removed));
 			}
 
 			return;
@@ -423,38 +430,6 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 			0.3F, 1.6F, false);
 
 		spawnPaintParticles(client, hit, face, SprayCanItem.colorOf(tool));
-	}
-
-	/**
-	 * The colour of the paint about to be scrubbed off, so the flecks match what was there.
-	 *
-	 * <p>Looks under the crosshair first and then widens to the rest of the face, because the
-	 * exact texel aimed at is often an unpainted gap inside a tag while the stroke around it is
-	 * solid colour.
-	 *
-	 * @return the RGB value, or -1 when this face has no paint at all
-	 */
-	private int sampleColorUnder(BlockPos pos, int face, int u8, int v8) {
-		Canvas canvas = canvases.get(pos, face);
-
-		if (canvas == null) {
-			return -1;
-		}
-
-		int[] texels = canvas.texels();
-		int under = texels[(v8 / 16) * Canvas.SIZE + (u8 / 16)];
-
-		if (PaintColor.isPainted(under)) {
-			return PaintColor.rgb(under);
-		}
-
-		for (int texel : texels) {
-			if (PaintColor.isPainted(texel)) {
-				return PaintColor.rgb(texel);
-			}
-		}
-
-		return -1;
 	}
 
 	/**
@@ -509,12 +484,21 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 
 	/** Applies the op locally so paint appears at the painter's latency, not the server's. */
 	private void predict(BlockPos pos, int face, BlockPos from, int fromU8, int fromV8,
-		int u8, int v8, int brush, boolean wholeFace, int value) {
+		int u8, int v8, int brush, boolean wholeFace, int value, StrokeApplier.ChangeSink changes) {
 		if (wholeFace) {
 			Canvas existing = canvases.get(pos, face);
 			Canvas cleared = existing == null ? null : existing.cleared(null, 0L);
 
 			if (cleared != null) {
+				// A whole-face wipe bypasses the walker, so it reports its own removals.
+				if (changes != null) {
+					for (int texel : existing.texels()) {
+						if (PaintColor.isPainted(texel)) {
+							changes.changed(texel);
+						}
+					}
+				}
+
 				canvases.remove(pos, face);
 				markDirty(pos);
 			}
@@ -525,7 +509,27 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		// The same code the server runs, over the same block data, so the two cannot draw
 		// different lines - a separate client implementation is how prediction drifts.
 		StrokeApplier.apply(face, from, fromU8, fromV8, pos, u8, v8, brush, value, null, 0L,
-			clientAccess());
+			clientAccess(), changes);
+	}
+
+	/**
+	 * The colour to throw off as flecks: whichever was erased most.
+	 *
+	 * <p>A stroke can cross several colours, and picking the commonest is both the closest match to
+	 * what the player saw disappear and stable frame to frame.
+	 */
+	private static int dominantColor(Int2IntOpenHashMap counts) {
+		int best = PaintColor.DEFAULT_RGB;
+		int bestCount = -1;
+
+		for (Int2IntMap.Entry entry : counts.int2IntEntrySet()) {
+			if (entry.getIntValue() > bestCount) {
+				bestCount = entry.getIntValue();
+				best = entry.getIntKey();
+			}
+		}
+
+		return best;
 	}
 
 	/**
