@@ -390,8 +390,9 @@ NeoForge  ModelEvent.ModifyBakingResult → DynamicBlockStateModel
    bounded at 256.
 2. Produce one `PaintQuad` per rectangle on the face plane, offset **0.005 blocks** along the
    face normal to avoid z-fighting, carrying the texel ARGB and UVs into a single
-   `simple_graffiti:paint/spray` sprite in the block atlas (a subtle grain, sampled
-   continuously across the face so it does not repeat per texel).
+   `simple_graffiti:paint/spray` sprite in the block atlas. That sprite is solid white, so the
+   vertex colour passes through untouched and paint is exactly the colour sprayed; a noise grain
+   was tried first and read as mottled once multiplied by the colour.
 3. Emit with cutout material flags and `cullFace = null` (the quad floats just off the
    surface, so it must not be culled with the face it sits on) and `nominalFace = dir` so
    lighting and AO come out right.
