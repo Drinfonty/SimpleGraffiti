@@ -11,6 +11,11 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.SlotAccess;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.ClickAction;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
@@ -112,6 +117,56 @@ public class SprayCanItem extends Item {
 		lines.accept(Component.translatable("tooltip.simple_graffiti.charges",
 				remainingCharges(stack), stack.getMaxDamage())
 			.withStyle(ChatFormatting.GRAY));
+	}
+
+	/**
+	 * Refills the can when a magma cream is left-clicked onto it in an inventory, the way a bundle
+	 * takes an item.
+	 *
+	 * <p>This is called on the stack sitting in the slot, with the carried stack as {@code other} -
+	 * so it fires for "hold magma cream, left-click the can". A full can deliberately declines, so
+	 * the click falls through to the normal swap rather than silently eating a magma cream for
+	 * nothing.
+	 */
+	@Override
+	public boolean overrideOtherStackedOnMe(ItemStack stack, ItemStack other, Slot slot,
+		ClickAction action, Player player, SlotAccess carried) {
+		if (action != ClickAction.PRIMARY || !other.is(Items.MAGMA_CREAM)) {
+			return false;
+		}
+
+		return refill(stack, other, player);
+	}
+
+	/**
+	 * The same refill the other way round: carrying the can and left-clicking a stack of magma
+	 * cream. Supported because which item a player picks up first is arbitrary, and a mechanic that
+	 * works in only one direction reads as a bug.
+	 */
+	@Override
+	public boolean overrideStackedOnOther(ItemStack stack, Slot slot, ClickAction action, Player player) {
+		if (action != ClickAction.PRIMARY || !slot.getItem().is(Items.MAGMA_CREAM)) {
+			return false;
+		}
+
+		return refill(stack, slot.getItem(), player);
+	}
+
+	/**
+	 * @return true when a charge was actually restored, which is also what tells the menu the click
+	 *         was consumed
+	 */
+	private static boolean refill(ItemStack can, ItemStack magmaCream, Player player) {
+		if (can.getDamageValue() == 0 || magmaCream.isEmpty()) {
+			return false;
+		}
+
+		can.setDamageValue(0);
+		magmaCream.shrink(1);
+
+		// Pressurised, to match the crafting recipe's fiction of a can charged with magma cream.
+		player.playSound(SoundEvents.FIRECHARGE_USE, 0.6F, 1.4F);
+		return true;
 	}
 
 	@Override

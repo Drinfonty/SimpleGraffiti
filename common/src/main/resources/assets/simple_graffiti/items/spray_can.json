@@ -13,7 +13,13 @@
     ],
     "fallback": {
       "type": "minecraft:model",
-      "model": "simple_graffiti:item/spray_can"
+      "model": "simple_graffiti:item/spray_can",
+      "tints": [
+        {
+          "type": "minecraft:dye",
+          "default": -1
+        }
+      ]
     }
   }
 }

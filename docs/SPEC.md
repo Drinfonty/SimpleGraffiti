@@ -69,8 +69,10 @@ buys three things for free: dye mixing through a vanilla-style recipe, item tint
   action-bar message `message.simple_graffiti.empty` when used.
 * In creative mode, charges MUST NOT be consumed.
 * The tooltip MUST show `charges/128` in addition to the vanilla dyed-colour line.
-* The item model MUST be a single model whose paint layer is tinted by the
-  `minecraft:dye` tint source, so any RGB value renders with no extra assets.
+* The held/world model MUST tint **only the can's body** with the `minecraft:dye` tint source,
+  leaving the base rim, cap ring and nozzle untinted metal. The body texture is near-white
+  greyscale, so the tint reproduces the paint colour closely. The inventory icon is a separate
+  flat model and is not tinted.
 
 ### 3.1 Crafting
 
@@ -115,12 +117,12 @@ other.
   dyes MUST blend exactly as it does for leather armour, via `DyedItemColor.applyDyes`. This
   is how arbitrary colours are reached without a UI.
 * Recolouring MUST NOT change `minecraft:damage`.
-* **Refill** — crafting a can with one `minecraft:magma_cream` MUST reset `minecraft:damage`
-  to `0` and MUST preserve `minecraft:dyed_color`, matching the pressurised-can fiction of the
-  crafting recipe. Implemented as `minecraft:crafting_transmute`.
-* If `crafting_transmute` on 26.2 does not apply the result's component patch over the copied
-  input components, a custom recipe serializer MUST be used instead; the observable behaviour
-  above is what is normative, not the mechanism.
+* **Refill** — left-clicking a can in an inventory while carrying `minecraft:magma_cream` MUST
+  reset `minecraft:damage` to `0`, consume one magma cream and preserve `minecraft:dyed_color`,
+  the way a bundle takes an item. It MUST work in both directions (carrying the cream onto the
+  can, or the can onto the cream), and a can that is already full MUST decline so the click falls
+  through to the normal swap instead of eating a magma cream for nothing. No crafting table is
+  involved.
 * A can MAY additionally be recoloured in-world (§5.3), which does **not** refill it.
 
 ### 3.3 The scrub sponge

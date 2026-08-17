@@ -102,8 +102,9 @@ Design pillars, in priority order:
 - **FR-CAN-4 [M1]** A can is **recoloured** by crafting it with dyes, which mix exactly as
   they do for leather armour, so combinations of dyes reach colours no single dye can.
   Recolouring must not change the remaining charges.
-- **FR-CAN-4a [M1]** A can is **refilled** by a separate recipe that does not change its
-  colour, so colour and charge are never traded against each other.
+- **FR-CAN-4a [M1]** A can is **refilled** by left-clicking it with a carried magma cream in an
+  inventory, bundle-style, which does not change its colour — so colour and charge are never
+  traded against each other, and refilling needs no crafting table.
 - **FR-CAN-5 [M1]** In creative mode charges are not consumed.
 - **FR-CAN-6 [M1]** The player can set any colour in-game without crafting: a picker UI on a
   keybind offering RGB/HSV sliders, a hex field, the 16 dye swatches as presets and a recent

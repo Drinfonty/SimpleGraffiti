@@ -287,8 +287,9 @@ so a player never has to spend one to get the other:
   are therefore reachable in survival, at a crafting table, without any UI at all. (The
   serializer id is `crafting_dye`; a plain `minecraft:dye` is rejected at data load. The *tint
   source* on the item model is separately named `minecraft:dye`, which is an easy confusion.)
-* *Refill* is `minecraft:crafting_transmute` with magma cream, matching the pressurised-can
-  fiction of the crafting recipe, and preserves the colour.
+* *Refill* is a bundle-style inventory click: carry a magma cream, left-click the can. No
+  crafting table, and it preserves the colour. Implemented with `overrideOtherStackedOnMe` and
+  `overrideStackedOnOther`, the same hooks vanilla bundles use.
 
 **Verification note:** whether a transmute recipe's result component patch is applied over the
 copied input components (needed to reset `minecraft:damage` to 0) must be confirmed in-game on
