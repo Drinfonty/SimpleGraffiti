@@ -26,6 +26,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.particles.DustParticleOptions;
+import net.minecraft.util.RandomSource;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.InteractionHand;
@@ -392,16 +393,94 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		strokeU8 = u8;
 		strokeV8 = v8;
 
+		// Sampled before the prediction runs, because that is what removes the paint locally -
+		// afterwards there is nothing left to take the colour of.
+		int erased = erase ? sampleColorUnder(pos, faceId, u8, v8) : -1;
+
 		predict(pos, faceId, from, fromU8, fromV8, u8, v8, brush, wholeFace,
 			erase ? PaintColor.EMPTY : PaintColor.opaque(SprayCanItem.colorOf(tool)));
 
-		if (!erase && --feedbackCooldown <= 0) {
-			feedbackCooldown = FEEDBACK_INTERVAL_TICKS;
-			client.level.playLocalSound(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
-				SoundEvents.GENERIC_EXTINGUISH_FIRE, net.minecraft.sounds.SoundSource.PLAYERS,
-				0.3F, 1.6F, false);
+		if (--feedbackCooldown > 0) {
+			return;
+		}
 
-			spawnPaintParticles(client, hit, face, SprayCanItem.colorOf(tool));
+		feedbackCooldown = FEEDBACK_INTERVAL_TICKS;
+
+		if (erase) {
+			// No sound here: the server plays block.sponge.absorb for everyone nearby, and only
+			// when something actually changed. Particles are purely local decoration, so they are
+			// skipped when there was no paint to remove - scrubbing bare stone should look like
+			// nothing is happening, because nothing is.
+			if (erased >= 0) {
+				spawnEraseParticles(client, hit, face, erased);
+			}
+
+			return;
+		}
+
+		client.level.playLocalSound(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
+			SoundEvents.GENERIC_EXTINGUISH_FIRE, net.minecraft.sounds.SoundSource.PLAYERS,
+			0.3F, 1.6F, false);
+
+		spawnPaintParticles(client, hit, face, SprayCanItem.colorOf(tool));
+	}
+
+	/**
+	 * The colour of the paint about to be scrubbed off, so the flecks match what was there.
+	 *
+	 * <p>Looks under the crosshair first and then widens to the rest of the face, because the
+	 * exact texel aimed at is often an unpainted gap inside a tag while the stroke around it is
+	 * solid colour.
+	 *
+	 * @return the RGB value, or -1 when this face has no paint at all
+	 */
+	private int sampleColorUnder(BlockPos pos, int face, int u8, int v8) {
+		Canvas canvas = canvases.get(pos, face);
+
+		if (canvas == null) {
+			return -1;
+		}
+
+		int[] texels = canvas.texels();
+		int under = texels[(v8 / 16) * Canvas.SIZE + (u8 / 16)];
+
+		if (PaintColor.isPainted(under)) {
+			return PaintColor.rgb(under);
+		}
+
+		for (int texel : texels) {
+			if (PaintColor.isPainted(texel)) {
+				return PaintColor.rgb(texel);
+			}
+		}
+
+		return -1;
+	}
+
+	/**
+	 * A puff of the paint being removed, drifting off the surface and falling.
+	 *
+	 * <p>Deliberately the colour that is being erased rather than a generic grey: it reads as the
+	 * paint coming off, and it tells the player at a glance that the sponge actually bit.
+	 */
+	private void spawnEraseParticles(Minecraft client, Vec3 hit, Direction face, int rgb) {
+		if (!config.showPaintParticles || client.level == null) {
+			return;
+		}
+
+		DustParticleOptions dust = new DustParticleOptions(PaintColor.opaque(rgb), 0.6F);
+		RandomSource random = client.level.getRandom();
+
+		for (int i = 0; i < 3; i++) {
+			// Scattered across the brush rather than a single point, and drifting outwards and
+			// downwards, so it looks like flecks being scrubbed loose instead of a spray.
+			client.level.addParticle(dust,
+				hit.x + face.getStepX() * 0.03 + (random.nextDouble() - 0.5) * 0.2,
+				hit.y + face.getStepY() * 0.03 + (random.nextDouble() - 0.5) * 0.2,
+				hit.z + face.getStepZ() * 0.03 + (random.nextDouble() - 0.5) * 0.2,
+				face.getStepX() * 0.02 + (random.nextDouble() - 0.5) * 0.02,
+				face.getStepY() * 0.02 - 0.03,
+				face.getStepZ() * 0.02 + (random.nextDouble() - 0.5) * 0.02);
 		}
 	}
 

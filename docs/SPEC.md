@@ -302,6 +302,11 @@ optional `message.simple_graffiti.not_paintable` action bar (rate-limited to one
 * Spraying MUST play `entity.generic.extinguish_fire` at volume 0.3 and pitch 1.6 ± 0.1, and MUST
   emit 1–2 `minecraft:dust` particles of the paint colour at the hit point, both at most once per
   5 ticks per player — twenty hisses a second is not a spray can.
+* Erasing MUST emit `minecraft:dust` particles **in the colour being removed**, drifting off the
+  surface and falling, at the same 5-tick cadence. The colour MUST be sampled before the erase is
+  applied locally, or there is nothing left to sample. An erase that removes no paint MUST emit
+  nothing, so scrubbing bare stone looks like what it is. Particles are client-side decoration and
+  obey `showPaintParticles`; the erase *sound* stays server-side so everyone nearby hears it.
 * Painting MUST NOT swing the arm more than once per stamp, and MUST NOT trigger block
   breaking, block placing, or item use of any other kind.
 * Reach: the server MUST reject any paint whose target is further than the player's
