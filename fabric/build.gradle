@@ -60,22 +60,6 @@ jar {
 	}
 }
 
-// Automatically deploy built jar to Minecraft mods directory
-tasks.register('copyJarToMods', Copy) {
-	from tasks.named('jar')
-	into "/home/ptphong/.minecraft/mods"
-
-	doFirst {
-		fileTree("/home/ptphong/.minecraft/mods").matching {
-			include "simple-graffiti-*.jar"
-		}.each { file ->
-			delete file
-		}
-	}
-
-	mustRunAfter tasks.named('jar')
-}
-
 // Automatically copy built jar to release directory in the project root
 tasks.register('copyJarToRelease', Copy) {
 	from tasks.named('jar')
@@ -84,8 +68,12 @@ tasks.register('copyJarToRelease', Copy) {
 	mustRunAfter tasks.named('jar')
 }
 
+// Deliberately no copy into the live .minecraft/mods folder. Checkbox does that, but it was
+// Fabric-only; this mod ships both loaders, so an automatic copy plants a Fabric jar in a
+// profile that may be running NeoForge next time. Both jars land in release/ and get installed
+// by hand, which is the only version of this that cannot install the wrong one.
 tasks.named('build') {
-	finalizedBy('copyJarToMods', 'copyJarToRelease')
+	finalizedBy('copyJarToRelease')
 }
 
 afterEvaluate {
