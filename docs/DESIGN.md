@@ -85,7 +85,7 @@ from memory. They drive most of the architecture.
 | `ChunkMap extends SimpleRegionStorage`; `SimpleRegionStorage(RegionStorageInfo, Path, DataFixer, boolean, DataFixTypes)` with `read/write(ChunkPos, CompoundTag)` returning futures | Graffiti gets its own region-file store next to `region/` and `entities/`, chunk-granular and off-thread, instead of a whole-dimension `SavedData` blob |
 | Fabric: `PayloadTypeRegistry`, `ServerPlayNetworking`, `ClientPlayNetworking.canSend(CustomPacketPayload.Type)` | Graceful degradation on Fabric is a one-line check |
 | NeoForge: `RegisterPayloadHandlersEvent` → `PayloadRegistrar.optional()`, `NetworkRegistry.hasChannel(listener, Identifier)`, `ClientPacketDistributor.sendToServer`, `PacketDistributor` | `optional()` is what stops a modded client being disconnected from a server that lacks the mod |
-| `TransmuteRecipe` (`minecraft:crafting_transmute`) exists, as do `SelectItemModelProperties.ComponentContents` and `ItemTintSources.Constant` | Recolour/refill recipes and colour-driven item models are data, not code |
+| `DyeRecipe` (`minecraft:crafting_dye`) is data-driven, and `Item.overrideOtherStackedOnMe`/`overrideStackedOnOther` are the hooks vanilla bundles use for inventory-click interactions | Recolouring is a recipe; refilling is a bundle-style click rather than a recipe, so no crafting table is involved |
 | `net.minecraft.resources.Identifier` (not `ResourceLocation`); `DataComponentType`; `DyeColor` | Same naming baseline as Checkbox — `SimpleGraffiti.id(String)` helper |
 
 Only one of these is *not* API-stable: the `PlayerChunkSender` injection, a single small
@@ -639,5 +639,3 @@ APIs that are stable across 26.x and should move by cherry-pick.
 * Per-texel ARGB costs 4× a 16-entry palette. If painted worlds turn out heavier than
   expected, a per-canvas palette recovers most of it — at the cost of an eviction rule and a
   replay-order hazard, which is why it was not chosen up front.
-* Whether `crafting_transmute` honours a result component patch on 26.2 decides whether refill
-  is data-only or needs a small custom serializer ([§4](#item-state)).
