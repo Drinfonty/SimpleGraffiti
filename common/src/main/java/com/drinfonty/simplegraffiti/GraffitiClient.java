@@ -28,6 +28,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.particles.DustParticleOptions;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.util.RandomSource;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
@@ -274,6 +275,17 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		// joined to it, or clicking elsewhere would draw a line across the gap.
 		strokeAnchored = false;
 
+		// Re-target the same way the held stroke does. Vanilla handed us whatever its own crosshair
+		// hit, which may be a tuft of grass; the first stamp of a stroke should land where every
+		// later one would.
+		BlockHitResult retargeted = findPaintTarget(Minecraft.getInstance());
+
+		if (retargeted != null) {
+			paint(retargeted.getBlockPos(), retargeted.getDirection(), retargeted.getLocation(),
+				hand, erase, wholeFace);
+			return;
+		}
+
 		paint(pos, face, hit, hand, erase, wholeFace);
 	}
 
@@ -311,14 +323,45 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 
 		sprayCooldown = SPRAY_INTERVAL_TICKS;
 
-		if (!(client.hitResult instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
-			// Off a block entirely: the stroke restarts when the crosshair comes back, rather than
-			// leaping across whatever the player swept over in between.
+		BlockHitResult hit = findPaintTarget(client);
+
+		if (hit == null) {
+			// Off a surface entirely: the stroke restarts when the crosshair comes back, rather
+			// than leaping across whatever the player swept over in between.
 			strokeAnchored = false;
 			return;
 		}
 
 		paint(hit.getBlockPos(), hit.getDirection(), hit.getLocation(), sprayHand, sprayErases, false);
+	}
+
+	/**
+	 * Where the crosshair is pointing, for painting purposes.
+	 *
+	 * <p>Deliberately not the game's own crosshair target. That one clips against block
+	 * <em>outlines</em>, so grass, flowers and other decoration you can walk straight through still
+	 * stop the ray - and since none of them is a paintable surface, dragging a line across a
+	 * grassy floor kept breaking wherever a tuft stood. Clipping against colliders instead lets the
+	 * ray pass through anything you could walk through and land on the ground behind it.
+	 *
+	 * <p>Solid-but-unpaintable blocks like glass still stop the ray, because they do have a
+	 * collider: this makes the spray ignore decoration, not see through walls.
+	 *
+	 * @return the surface to paint, or null when the ray reached nothing within reach
+	 */
+	private static BlockHitResult findPaintTarget(Minecraft client) {
+		if (client.player == null || client.level == null) {
+			return null;
+		}
+
+		double reach = client.player.blockInteractionRange();
+		Vec3 eye = client.player.getEyePosition();
+		Vec3 end = eye.add(client.player.getViewVector(1.0F).scale(reach));
+
+		BlockHitResult hit = client.level.clip(new ClipContext(eye, end,
+			ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, client.player));
+
+		return hit.getType() == HitResult.Type.BLOCK ? hit : null;
 	}
 
 	private void paint(BlockPos pos, Direction face, Vec3 hit, InteractionHand hand,

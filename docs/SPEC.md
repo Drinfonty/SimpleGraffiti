@@ -292,6 +292,12 @@ optional `message.simple_graffiti.not_paintable` action bar (rate-limited to one
 
 * Use (right-click) on a paintable face applies one stamp of the can's colour at the hit
   point, and consumes one charge.
+* Targeting MUST clip against block **colliders**, not outlines. The game's own crosshair target
+  stops at anything with an outline, including grass, flowers and other decoration a player walks
+  straight through — none of which is paintable, so a stroke across a grassy floor broke at every
+  tuft. Clipping against colliders passes through such blocks and lands on the surface behind.
+  Solid-but-unpaintable blocks such as glass still stop the ray, since they do have a collider:
+  this ignores decoration, it does not paint through walls.
 * Holding use MUST sample the crosshair **every tick** for as long as use is held and the
   crosshair is on a paintable face, painting the stroke from the previous sample (§4.4). Sampling
   less often makes the painted line trail behind the crosshair by however far the mouse moved
