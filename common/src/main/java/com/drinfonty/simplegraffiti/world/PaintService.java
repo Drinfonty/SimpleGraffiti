@@ -357,6 +357,28 @@ public final class PaintService {
 		return payloads;
 	}
 
+	/** Clears one face, as when a block keeps existing but its paintable surface moves. */
+	public static void clearFace(GraffitiServer server, ServerLevel level, BlockPos pos, int face) {
+		CanvasStore store = server.storeIfPresent(level);
+
+		if (store == null) {
+			return;
+		}
+
+		ChunkPos chunkPos = ChunkPos.containing(pos);
+		ChunkCanvases chunk = store.chunk(chunkPos);
+
+		if (chunk == null || !chunk.remove(CanvasStore.key(pos, face))) {
+			return;
+		}
+
+		broadcast(server, level, chunkPos, GraffitiPayloads.ClearS2C.face(pos.asLong(), face));
+
+		if (SimpleGraffiti.DEBUG) {
+			SimpleGraffiti.LOGGER.info("Cleared graffiti at {} face {} (surface moved)", pos, face);
+		}
+	}
+
 	/** Clears every canvas on a block, as when it is broken or replaced (SPEC 5.4). */
 	public static void clearBlock(GraffitiServer server, ServerLevel level, BlockPos pos) {
 		CanvasStore store = server.store(level);

@@ -6,13 +6,11 @@ import com.drinfonty.simplegraffiti.item.GraffitiItems;
 import com.drinfonty.simplegraffiti.net.GraffitiPayloads;
 import com.drinfonty.simplegraffiti.net.PayloadSender;
 import com.drinfonty.simplegraffiti.server.GraffitiCommands;
-import com.drinfonty.simplegraffiti.world.PaintService;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -22,7 +20,6 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 
@@ -105,16 +102,6 @@ public class SimpleGraffitiFabric implements ModInitializer {
 
 			if (graffiti != null) {
 				graffiti.saveAll();
-			}
-		});
-
-		// Breaking a block destroys its paint (SPEC 5.4). Hooked after the break rather than
-		// before, so a cancelled break does not wipe a mural.
-		PlayerBlockBreakEvents.AFTER.register((level, player, pos, state, blockEntity) -> {
-			GraffitiServer graffiti = GraffitiServer.get();
-
-			if (graffiti != null && graffiti.config().clearOnBlockBreak && level instanceof ServerLevel serverLevel) {
-				PaintService.clearBlock(graffiti, serverLevel, pos);
 			}
 		});
 

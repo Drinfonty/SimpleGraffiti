@@ -29,6 +29,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.util.RandomSource;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
@@ -361,7 +362,37 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 		BlockHitResult hit = client.level.clip(new ClipContext(eye, end,
 			ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, client.player));
 
-		return hit.getType() == HitResult.Type.BLOCK ? hit : null;
+		if (hit.getType() != HitResult.Type.BLOCK) {
+			return null;
+		}
+
+		return liftOntoSurface(client, hit);
+	}
+
+	/**
+	 * Retargets onto a flat surface resting on the block that was hit, when that surface has no
+	 * collider of its own.
+	 *
+	 * <p>A single layer of snow is the case that matters: it is plainly a surface, but you walk
+	 * straight through it, so a collider ray goes past it and lands on the ground underneath -
+	 * where paint would be hidden beneath the snow. Anything thicker has its own collider and stops
+	 * the ray by itself.
+	 */
+	private static BlockHitResult liftOntoSurface(Minecraft client, BlockHitResult hit) {
+		if (hit.getDirection() != Direction.UP) {
+			return hit;
+		}
+
+		BlockPos above = hit.getBlockPos().above();
+		BlockState state = client.level.getBlockState(above);
+
+		if (com.drinfonty.simplegraffiti.world.PaintSurface.topOf(client.level, above, state)
+			== com.drinfonty.simplegraffiti.world.PaintSurface.NONE) {
+			return hit;
+		}
+
+		// Keep the crosshair's own x/z so the mark still lands where the player is pointing.
+		return hit.withPosition(above);
 	}
 
 	private void paint(BlockPos pos, Direction face, Vec3 hit, InteractionHand hand,

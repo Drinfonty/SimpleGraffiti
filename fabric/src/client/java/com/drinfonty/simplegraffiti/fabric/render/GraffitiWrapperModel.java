@@ -58,6 +58,10 @@ public class GraffitiWrapperModel extends WrapperBlockStateModel {
 		TextureAtlasSprite sprite = PaintSprites.paint();
 		float[] corners = new float[12];
 
+		// Snow layers, slabs and carpets are paintable on top and their surface is not at the top
+		// of the cube; paint has to sit on what the player can see.
+		float surfaceY = com.drinfonty.simplegraffiti.world.PaintSurface.planeFor(level, pos, state, Direction.UP);
+
 		for (int face = 0; face < FaceAxes.FACE_COUNT; face++) {
 			Canvas canvas = client.canvases().get(pos, face);
 
@@ -68,7 +72,8 @@ public class GraffitiWrapperModel extends WrapperBlockStateModel {
 			Direction direction = Direction.from3DDataValue(face);
 
 			for (PaintQuad quad : CanvasMesher.mesh(canvas.texels(), face)) {
-				emit(emitter, sprite, direction, PaintGeometry.corners(quad, corners), quad.argb());
+				emit(emitter, sprite, direction,
+					PaintGeometry.corners(quad, corners, surfaceY), quad.argb());
 			}
 		}
 	}

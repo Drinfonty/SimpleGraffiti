@@ -120,9 +120,10 @@ Design pillars, in priority order:
   grid.
 - **FR-PAINT-2 [M1]** Holding use paints continuously at a fixed rate, so dragging the
   crosshair draws a line.
-- **FR-PAINT-3 [M1]** A face is paintable when the block's face is a sturdy full face, the
-  block is not on the server's deny list, and the face is exposed (not flush against another
-  block). Non-paintable targets do nothing and are not consumed against.
+- **FR-PAINT-3 [M1]** A face is paintable when it is exposed, the block is not on the server's
+  deny list, and either it is a sturdy full face, or — for the **top** face — the block has a flat
+  full-width surface such as snow, a slab or a carpet. Non-paintable targets do nothing and are not
+  consumed against.
 - **FR-PAINT-4 [M1]** Painting is additive only; erasing is the scrub sponge's job (§4.3), so
   that sneak-use is free for the eyedropper and no interaction is ambiguous.
 - **FR-PAINT-6 [M1]** Breaking a block removes all paint on that block. Paint is not dropped

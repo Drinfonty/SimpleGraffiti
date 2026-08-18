@@ -6,7 +6,6 @@ import com.drinfonty.simplegraffiti.item.GraffitiItems;
 import com.drinfonty.simplegraffiti.net.GraffitiPayloads;
 import com.drinfonty.simplegraffiti.net.PayloadSender;
 import com.drinfonty.simplegraffiti.server.GraffitiCommands;
-import com.drinfonty.simplegraffiti.world.PaintService;
 
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -22,7 +21,6 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
-import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
@@ -107,26 +105,6 @@ public class SimpleGraffitiNeoForge {
 
 			if (server != null) {
 				server.saveAll();
-			}
-		});
-
-		// Breaking a block destroys its paint (SPEC 5.4). BreakEvent fires before the break and
-		// is cancellable, so the clear is deferred to the end of the tick - a cancelled break
-		// must not wipe a mural.
-		NeoForge.EVENT_BUS.addListener(BreakBlockEvent.class, event -> {
-			GraffitiServer server = GraffitiServer.get();
-
-			if (server == null || !server.config().clearOnBlockBreak || event.isCanceled()) {
-				return;
-			}
-
-			if (event.getLevel() instanceof ServerLevel level) {
-				var pos = event.getPos();
-				level.getServer().execute(() -> {
-					if (level.getBlockState(pos).isAir()) {
-						PaintService.clearBlock(server, level, pos);
-					}
-				});
 			}
 		});
 

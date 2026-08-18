@@ -39,6 +39,18 @@ public final class PaintGeometry {
 	 * @return {@code out}, for chaining
 	 */
 	public static float[] corners(PaintQuad quad, float[] out) {
+		return corners(quad, out, 1.0F);
+	}
+
+	/**
+	 * As {@link #corners(PaintQuad, float[])}, but with the top face at {@code surfaceY} rather
+	 * than at the top of the cube.
+	 *
+	 * <p>Snow layers, slabs and carpets are paintable on top, and their surface is not at 1.0 -
+	 * placing paint at the cube's top would leave it floating above thin snow, or buried inside
+	 * deep snow. Only the top face varies; every other face still belongs to a full cube.
+	 */
+	public static float[] corners(PaintQuad quad, float[] out, float surfaceY) {
 		if (out.length < 12) {
 			throw new IllegalArgumentException("need room for 12 floats");
 		}
@@ -50,10 +62,10 @@ public final class PaintGeometry {
 
 		// (u, v) walked anticlockwise as seen from outside the face: bottom-left, bottom-right,
 		// top-right, top-left.
-		write(out, 0, quad.face(), u0, v1);
-		write(out, 3, quad.face(), u1, v1);
-		write(out, 6, quad.face(), u1, v0);
-		write(out, 9, quad.face(), u0, v0);
+		write(out, 0, quad.face(), u0, v1, surfaceY);
+		write(out, 3, quad.face(), u1, v1, surfaceY);
+		write(out, 6, quad.face(), u1, v0, surfaceY);
+		write(out, 9, quad.face(), u0, v0, surfaceY);
 
 		return out;
 	}
@@ -65,7 +77,7 @@ public final class PaintGeometry {
 	 * the literal inverse matters: if this and {@link FaceAxes} disagree by so much as a flip, paint
 	 * lands mirrored, and the bug looks like "the crosshair is wrong" rather than "the renderer is".
 	 */
-	private static void write(float[] out, int offset, int face, float u, float v) {
+	private static void write(float[] out, int offset, int face, float u, float v, float surfaceY) {
 		float x;
 		float y;
 		float z;
@@ -94,7 +106,7 @@ public final class PaintGeometry {
 			}
 			case FaceAxes.UP -> {
 				x = u;
-				y = 1.0F + d;
+				y = surfaceY + d;
 				z = v;
 			}
 			case FaceAxes.DOWN -> {

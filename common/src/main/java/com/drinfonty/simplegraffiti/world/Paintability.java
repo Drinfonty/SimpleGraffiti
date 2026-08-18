@@ -34,7 +34,16 @@ public final class Paintability {
 			return false;
 		}
 
-		if (!state.isFaceSturdy(level, pos, face) || !state.isCollisionShapeFullBlock(level, pos)) {
+		if (face == Direction.UP) {
+			// The top face only has to be flat and full-width, not a whole cube: snow layers,
+			// slabs and carpets are surfaces people stand on and want to tag, and snow in
+			// particular covers whole biomes rather than the odd step.
+			if (PaintSurface.topOf(level, pos, state) == PaintSurface.NONE) {
+				return false;
+			}
+		} else if (!state.isFaceSturdy(level, pos, face) || !state.isCollisionShapeFullBlock(level, pos)) {
+			// Every other face still needs a full cube. Painting the side of a half-height block
+			// would need the canvas to carry its 2D bounds too, which the format has no room for.
 			return false;
 		}
 
@@ -60,54 +69,5 @@ public final class Paintability {
 		BlockState neighbourState = level.getBlockState(neighbour);
 
 		return !neighbourState.isFaceSturdy(level, neighbour, face.getOpposite());
-	}
-
-	/**
-	 * Whether a block change should wipe that block's paint (SPEC 5.4). Kept next to the
-	 * paintability test so the two cannot drift apart into "paintable but never cleaned up".
-	 *
-	 * <p>Any change of block clears, and so does a state change that stops the block being a full
-	 * cube - a slab being un-doubled, say - because paint on a face that no longer exists would
-	 * otherwise float in the air.
-	 */
-	public static boolean shouldClearOnChange(BlockState before, BlockState after) {
-		if (before.getBlock() != after.getBlock()) {
-			return true;
-		}
-
-		return !before.equals(after) && !after.isCollisionShapeFullBlock(EmptyGetter.INSTANCE, BlockPos.ZERO);
-	}
-
-	/**
-	 * A stand-in {@link BlockGetter} for shape questions that do not depend on neighbours. Vanilla
-	 * shape caches ignore the level for full-cube tests, but the signature demands one.
-	 */
-	private enum EmptyGetter implements BlockGetter {
-		INSTANCE;
-
-		@Override
-		public net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(BlockPos pos) {
-			return null;
-		}
-
-		@Override
-		public BlockState getBlockState(BlockPos pos) {
-			return net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
-		}
-
-		@Override
-		public net.minecraft.world.level.material.FluidState getFluidState(BlockPos pos) {
-			return net.minecraft.world.level.material.Fluids.EMPTY.defaultFluidState();
-		}
-
-		@Override
-		public int getHeight() {
-			return 0;
-		}
-
-		@Override
-		public int getMinY() {
-			return 0;
-		}
 	}
 }

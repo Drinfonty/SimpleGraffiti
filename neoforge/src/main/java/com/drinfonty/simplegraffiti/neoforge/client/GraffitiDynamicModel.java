@@ -49,7 +49,11 @@ public class GraffitiDynamicModel extends DelegateBlockStateModel implements Dyn
 	 * mutated: the same reference means byte-identical paint. Fabric gets this for free through
 	 * {@code createGeometryKey}; on NeoForge the caching is ours to do.
 	 */
-	private static final Map<Canvas, List<BakedQuad>> CACHE = new ConcurrentHashMap<>();
+	private static final Map<CacheKey, List<BakedQuad>> CACHE = new ConcurrentHashMap<>();
+
+	/** Canvas identity plus where its surface sits, which is what the geometry depends on. */
+	private record CacheKey(Canvas canvas, int face, float surfaceY) {
+	}
 
 	/** Roughly a full render distance of heavily painted chunks before the cache is dropped. */
 	private static final int MAX_CACHED_CANVASES = 8192;
@@ -88,7 +92,12 @@ public class GraffitiDynamicModel extends DelegateBlockStateModel implements Dyn
 			}
 
 			int currentFace = face;
-			List<BakedQuad> faceQuads = CACHE.computeIfAbsent(canvas, key -> build(key, currentFace));
+			// Keyed on the surface height as well as the canvas: the same paint on snow that has
+			// since deepened belongs at a different height, and a stale cache entry would leave it
+			// buried or floating.
+			float surfaceY = com.drinfonty.simplegraffiti.world.PaintSurface.planeFor(level, pos, state, Direction.UP);
+			List<BakedQuad> faceQuads = CACHE.computeIfAbsent(new CacheKey(canvas, currentFace, surfaceY),
+				key -> build(key.canvas(), key.face(), key.surfaceY()));
 
 			if (quads == null) {
 				quads = new ArrayList<>(faceQuads.size() * 2);
@@ -109,14 +118,14 @@ public class GraffitiDynamicModel extends DelegateBlockStateModel implements Dyn
 		}
 	}
 
-	private static List<BakedQuad> build(Canvas canvas, int face) {
+	private static List<BakedQuad> build(Canvas canvas, int face, float surfaceY) {
 		Direction direction = Direction.from3DDataValue(face);
 		List<PaintQuad> rectangles = CanvasMesher.mesh(canvas.texels(), face);
 		List<BakedQuad> quads = new ArrayList<>(rectangles.size());
 		float[] corners = new float[12];
 
 		for (PaintQuad rectangle : rectangles) {
-			PaintGeometry.corners(rectangle, corners);
+			PaintGeometry.corners(rectangle, corners, surfaceY);
 
 			MutableQuad quad = new MutableQuad();
 

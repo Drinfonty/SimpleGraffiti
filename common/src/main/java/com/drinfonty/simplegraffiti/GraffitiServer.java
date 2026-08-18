@@ -109,6 +109,16 @@ public final class GraffitiServer {
 			new CanvasStore(level, dimensionPath(level), false));
 	}
 
+	/**
+	 * The store for a level if one already exists, without creating one.
+	 *
+	 * <p>Used by the block-change hook, which runs for every block placed anywhere: creating a
+	 * store there would open region files for dimensions nobody has ever painted in.
+	 */
+	public CanvasStore storeIfPresent(ServerLevel level) {
+		return stores.get(level.dimension());
+	}
+
 	private Path dimensionPath(ServerLevel level) {
 		// The world path is only reachable through MinecraftServer's protected storage source, so
 		// the accessor mixin exists purely to ask "where is this dimension on disk".

@@ -273,8 +273,11 @@ Brush.stampLine(canvas, u0, v0, u1, v1, size, value)
 
 A face `(pos, dir)` is paintable if **all** hold:
 
-1. `state.isFaceSturdy(level, pos, dir)` is true;
-2. `state.isCollisionShapeFullBlock(level, pos)` is true;
+1. for the **top** face, the block has a flat full-width surface — its outline shape *is* a box
+   spanning the whole footprint from the block floor up to some height (§5.1.1); for every other
+   face, `state.isFaceSturdy(level, pos, dir)` and `state.isCollisionShapeFullBlock(level, pos)`
+   are both true;
+2. (see above);
 3. the neighbouring block at `pos.relative(dir)` does not occlude that face
    (`isFaceSturdy` on the opposing face is false), i.e. the face is visible;
 4. the block is not in `#simple_graffiti:not_paintable` (default contents: none) and, when
@@ -284,6 +287,25 @@ A face `(pos, dir)` is paintable if **all** hold:
    vanilla interaction; sneak-use with a can, which suppresses vanilla interaction, MAY still
    paint such blocks if they otherwise qualify;
 6. fluids are never paintable.
+
+#### 5.1.1 Flat-topped surfaces
+
+The top face does not require a full cube. Snow layers, slabs and carpets are surfaces players
+stand on and expect to tag, and snow in particular blankets whole biomes — refusing it meant a
+snowy landscape could not be painted at all, which is a far larger hole than the slabs the
+"full blocks only" rule was written for.
+
+* The surface height MUST come from the block's **outline** shape, not its collision shape. Snow's
+  collider is one layer shallower than it looks, so collision-derived paint on four layers of snow
+  would sit at 0.375 while the snow visibly reaches 0.5 — buried. A single snow layer has no
+  collider at all yet is plainly a visible surface.
+* The shape MUST *be* a box spanning the footprint, not merely fit inside one. Stairs share a
+  full-cube bounding box with stone; testing bounds alone would float paint over their steps.
+* Paint MUST be rendered at that height rather than at the top of the cube.
+* Targeting MUST retarget onto such a surface when it has no collider of its own — a single snow
+  layer, which a collider ray passes straight through to the ground beneath, where paint would be
+  hidden under the snow.
+* Side faces of partial blocks remain unpaintable: a canvas has no room to record 2D bounds.
 
 A use on a non-paintable face MUST do nothing: no charge, no packet, no message beyond the
 optional `message.simple_graffiti.not_paintable` action bar (rate-limited to one per second).
@@ -348,7 +370,11 @@ throw.
 ### 5.4 Removal
 
 * The **scrub sponge** (§3.3) erases a brush-sized area on use and a whole face on sneak-use.
-* Breaking or replacing a block MUST clear all six of its canvases.
+* Breaking or replacing a block MUST clear all six of its canvases, however it happened — a
+  player breaking it, snow melting, a piston. This MUST be hooked from the block-change path
+  itself rather than from a player-break event, which never sees the other two.
+* A block whose paintable surface **moves** — snow falling on snow — MUST have its top canvas
+  cleared, since the paint would otherwise sink into the new surface or hang above the old.
 * Vanilla sponges and wet sponges MUST have no graffiti behaviour whatsoever.
 * `/graffiti clear` (§9) clears by radius or by player.
 * Explosions, fire, water flow and rain MUST NOT clear paint in v1.0.
@@ -683,7 +709,9 @@ These are specified behaviour, not defects:
    that case.
 2. Paint is destroyed by breaking the block and by piston movement; it is never dropped or
    recoverable.
-3. Only sturdy full-block faces can be painted. Slabs, stairs, fences and glass panes cannot.
+3. Side faces require a full cube, so the sides of slabs, stairs, fences and panes cannot be
+   painted. Their **tops** can, when flat and full-width (§5.1.1) — snow layers, slabs and carpets
+   qualify; stairs and fences do not.
 4. Resolution is one texel (1/16 block). Colour is unrestricted, but paint is fully opaque:
    there is no partial alpha, no gradient and no sub-texel detail.
 5. `/graffiti clear player` sees loaded chunks only.
