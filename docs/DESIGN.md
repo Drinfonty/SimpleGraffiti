@@ -298,8 +298,8 @@ user-visible difference.
 
 ### The scrub sponge
 
-`simple_graffiti:scrub_sponge` is a second item, `max_damage = 128`, crafted from a wet sponge
-and an iron nugget. Use erases a brush-sized area; sneak-use clears the whole face.
+`simple_graffiti:scrub_sponge` is a second item, `max_damage = 128`, crafted from a green carpet
+over a sponge. Use erases a brush-sized area; sneak-use clears the whole face.
 
 It exists rather than reusing the vanilla wet sponge for two reasons. The first is a rule this
 mod set itself: *add no behaviour to vanilla items* — a wet sponge that silently gained a new

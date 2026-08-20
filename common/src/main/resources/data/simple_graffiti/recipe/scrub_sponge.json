@@ -1,9 +1,14 @@
 {
-  "type": "minecraft:crafting_shapeless",
-  "ingredients": [
-    "minecraft:wet_sponge",
-    "minecraft:iron_nugget"
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " # ",
+    " S ",
+    "   "
   ],
+  "key": {
+    "#": "minecraft:green_carpet",
+    "S": "minecraft:sponge"
+  },
   "result": {
     "id": "simple_graffiti:scrub_sponge"
   }

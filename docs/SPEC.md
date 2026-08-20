@@ -130,8 +130,10 @@ other.
 `simple_graffiti:scrub_sponge`. Stack size 1. `max_damage = 128`. Erases graffiti and does
 nothing else.
 
-* Recipe (shapeless, `data/simple_graffiti/recipe/scrub_sponge.json`): one
-  `minecraft:wet_sponge` + one `minecraft:iron_nugget`.
+* Recipe (shaped, `data/simple_graffiti/recipe/scrub_sponge.json`): one
+  `minecraft:green_carpet` directly above one `minecraft:sponge`. The pattern as written has a
+  blank third row, but `ShapedRecipePattern.unpack` shrinks blank rows and columns away, so the
+  effective shape is 1x2 and the pair may sit anywhere in the grid.
 * **Use** on a painted face MUST erase a brush-sized area at the hit point, using the same
   brush and the same `Brush.stamp` maths as painting, with `value = 0`.
 * Holding use MUST play the `BRUSH` use animation, so the sponge scrubs back and forth while it
