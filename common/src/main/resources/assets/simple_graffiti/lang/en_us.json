@@ -9,7 +9,7 @@
   "message.simple_graffiti.disabled": "Graffiti is disabled on this server.",
   "message.simple_graffiti.not_paintable": "You cannot paint on that.",
 
-  "key.simple_graffiti.palette": "Open Palette (or sneak-use a can)",
+  "key.simple_graffiti.palette": "Open Palette",
 
   "screen.simple_graffiti.palette": "Spray Can Palette",
   "screen.simple_graffiti.red": "Red: %s",
@@ -17,8 +17,6 @@
   "screen.simple_graffiti.blue": "Blue: %s",
   "screen.simple_graffiti.hex": "Hex colour",
   "screen.simple_graffiti.apply": "Apply",
-  "screen.simple_graffiti.viewed": "Looking at",
-  "screen.simple_graffiti.viewed.none": "nothing in range",
   "screen.simple_graffiti.brush.0": "Small",
   "screen.simple_graffiti.brush.1": "Medium",
   "screen.simple_graffiti.brush.2": "Large",

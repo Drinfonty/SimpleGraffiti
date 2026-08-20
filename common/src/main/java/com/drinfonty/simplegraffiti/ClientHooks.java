@@ -41,14 +41,6 @@ public final class ClientHooks {
 		void startSpraying(InteractionHand hand);
 
 		/**
-		 * The player sneak-used a can, which opens the colour picker.
-		 *
-		 * <p>Opening a screen is the one thing the item cannot do itself, and the picker needs the
-		 * colour under the crosshair, which only exists on the client.
-		 */
-		void openPalette();
-
-		/**
 		 * The player used a paint tool on a face.
 		 *
 		 * @param erase true for the scrub sponge, false for the spray can

@@ -23,13 +23,9 @@ import net.minecraft.world.item.ItemStack;
  * The colour picker (SPEC 5.3): RGB sliders, a hex field, the 16 dye colours as presets, the recent
  * colours row, and the three brush sizes.
  *
- * <p>It is built from stock widgets and stays deliberately plain - dye recipes reach any colour at
- * a crafting table too, so this is the convenient route rather than the only one.
- *
- * <p>It also absorbed the eyedropper. Sampling the block under the crosshair used to be its own
- * sneak-use gesture; now sneak-use opens this screen and the sampled colour arrives as the
- * <em>looking at</em> swatch. The colour is a snapshot taken when the screen opened, because once
- * it is open the crosshair is pointing at this panel and there is nothing in the world to sample.
+ * <p>It is a convenience rather than a necessity - dye recipes reach any colour at a crafting table
+ * and the eyedropper reaches any block's colour in the world - so it is built from stock widgets
+ * and stays deliberately plain.
  *
  * <p>Every position comes from one of the {@code …X}/{@code …Y} helpers below, because drawing and
  * hit-testing used to compute the swatch grid separately and could disagree about where a swatch
@@ -63,13 +59,7 @@ public class PaletteScreen extends Screen {
 	 */
 	private static final int PANEL_WIDTH =
 		MARGIN * 2 + Math.max(SWATCH_ROW_WIDTH, CONTROL_ROW_WIDTH);
-	private static final int PANEL_HEIGHT = 232;
-
-	/** Wider than a dye swatch, so the sampled colour does not read as a seventeenth preset. */
-	private static final int VIEWED_WIDTH = 28;
-
-	/** Passed for {@code viewedRgb} when the player was not looking at a block. */
-	public static final int NO_VIEWED_COLOR = -1;
+	private static final int PANEL_HEIGHT = 210;
 
 	private int red;
 	private int green;
@@ -83,16 +73,8 @@ public class PaletteScreen extends Screen {
 	/** Suppresses the responder while the field is being rewritten from the sliders. */
 	private boolean updatingHex;
 
-	/** The colour under the crosshair when the screen opened, or {@link #NO_VIEWED_COLOR}. */
-	private final int viewedRgb;
-
 	public PaletteScreen() {
-		this(NO_VIEWED_COLOR);
-	}
-
-	public PaletteScreen(int viewedRgb) {
 		super(Component.translatable("screen.simple_graffiti.palette"));
-		this.viewedRgb = viewedRgb;
 	}
 
 	private int left() {
@@ -117,19 +99,6 @@ public class PaletteScreen extends Screen {
 
 	private int recentRowY() {
 		return swatchRowY() + SWATCH + 6;
-	}
-
-	private int viewedRowY() {
-		return recentRowY() + SWATCH + 8;
-	}
-
-	/** The sampled swatch sits after its label, far enough right to clear the widest wording. */
-	private int viewedX() {
-		return left() + MARGIN + 72;
-	}
-
-	private boolean hasViewedColor() {
-		return viewedRgb != NO_VIEWED_COLOR;
 	}
 
 	/** The x of swatch {@code index} in either swatch row. */
@@ -341,13 +310,6 @@ public class PaletteScreen extends Screen {
 			}
 		}
 
-		if (hasViewedColor()
-			&& mouseY >= viewedRowY() && mouseY < viewedRowY() + SWATCH
-			&& mouseX >= viewedX() && mouseX < viewedX() + VIEWED_WIDTH) {
-			selectPreset(viewedRgb);
-			return true;
-		}
-
 		GraffitiClient client = GraffitiClient.get();
 
 		if (client != null && mouseY >= recentRowY() && mouseY < recentRowY() + SWATCH) {
@@ -404,21 +366,6 @@ public class PaletteScreen extends Screen {
 				graphics.fill(swatchX(i), recentRowY(), swatchX(i) + SWATCH, recentRowY() + SWATCH,
 					PaintColor.opaque(parsed));
 			}
-		}
-
-		graphics.text(font, Component.translatable("screen.simple_graffiti.viewed"),
-			left + MARGIN, viewedRowY() + 3, 0xFFAAAAAA);
-
-		if (hasViewedColor()) {
-			graphics.fill(viewedX(), viewedRowY(), viewedX() + VIEWED_WIDTH, viewedRowY() + SWATCH,
-				PaintColor.opaque(viewedRgb));
-		} else {
-			// An empty well rather than nothing at all: the row keeps its place, and "you were not
-			// looking at anything" is a different message from "this feature is missing".
-			graphics.fill(viewedX(), viewedRowY(), viewedX() + VIEWED_WIDTH, viewedRowY() + SWATCH,
-				0xFF303030);
-			graphics.text(font, Component.translatable("screen.simple_graffiti.viewed.none"),
-				viewedX() + VIEWED_WIDTH + CONTROL_GAP, viewedRowY() + 3, 0xFF808080);
 		}
 
 		if (minecraft != null && minecraft.player != null) {
