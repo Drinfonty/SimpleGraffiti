@@ -10,7 +10,10 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ItemUseAnimation;
 import net.minecraft.world.entity.SlotAccess;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ClickAction;
@@ -84,18 +87,56 @@ public class SprayCanItem extends Item {
 			return eyedropper(context, level);
 		}
 
+		// Deliberately PASS so vanilla falls through to use(). Painting is an item use, not a
+		// block interaction, which is what puts the drawn-bow pose on the arm and holds the can
+		// forward while spraying. It also means spraying starts when aiming at nothing, the way a
+		// bow does, instead of silently doing nothing.
+		return InteractionResult.PASS;
+	}
+
+	@Override
+	public InteractionResult use(Level level, Player player, InteractionHand hand) {
+		// Sneak-use is the eyedropper, handled in useOn against the block that was clicked.
+		if (player.isSecondaryUseActive()) {
+			return InteractionResult.PASS;
+		}
+
+		player.startUsingItem(hand);
+
 		if (level.isClientSide()) {
 			ClientHooks.PaintTrigger trigger = ClientHooks.trigger();
 
 			if (trigger != null) {
-				trigger.onUseOnFace(context.getClickedPos(), context.getClickedFace(),
-					context.getClickLocation(), context.getHand(), false, false);
+				trigger.startSpraying(hand);
 			}
 		}
 
-		// CONSUME on both sides: the interaction is ours, so vanilla must not also try to place a
-		// block or activate the target, but nothing is painted from here.
 		return InteractionResult.CONSUME;
+	}
+
+	/** Holding the can forward, like drawing a bow. */
+	@Override
+	public ItemUseAnimation getUseAnimation(ItemStack stack) {
+		return ItemUseAnimation.BOW;
+	}
+
+	/** As long as a bow's: the spray stops when the player lets go, not on a timer. */
+	@Override
+	public int getUseDuration(ItemStack stack, LivingEntity entity) {
+		return 72000;
+	}
+
+	@Override
+	public boolean releaseUsing(ItemStack stack, Level level, LivingEntity entity, int remaining) {
+		if (level.isClientSide()) {
+			ClientHooks.PaintTrigger trigger = ClientHooks.trigger();
+
+			if (trigger != null) {
+				trigger.stopSpraying();
+			}
+		}
+
+		return false;
 	}
 
 	private InteractionResult eyedropper(UseOnContext context, Level level) {

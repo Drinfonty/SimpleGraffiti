@@ -312,8 +312,14 @@ optional `message.simple_graffiti.not_paintable` action bar (rate-limited to one
 
 ### 5.2 Spraying
 
-* Use (right-click) on a paintable face applies one stamp of the can's colour at the hit
-  point, and consumes one charge.
+* Spraying is an item **use**, not a block interaction: `useOn` passes, `use` starts using the
+  item, and the use animation is `BOW`. That is what holds the can forward in the drawn-bow pose
+  while spraying, for the painter and for anyone watching them. It also means a spray starts when
+  aiming at nothing, as a bow does, rather than silently doing nothing.
+* The can MUST carry a `minecraft:use_effects` component allowing sprint at full speed. Using an
+  item normally slows the player to a crawl; painting a long wall should not feel like wading.
+* Use on a paintable face applies one stamp of the can's colour at the hit point, and consumes one
+  charge.
 * Targeting MUST clip against block **colliders**, not outlines. The game's own crosshair target
   stops at anything with an outline, including grass, flowers and other decoration a player walks
   straight through — none of which is paintable, so a stroke across a grassy floor broke at every

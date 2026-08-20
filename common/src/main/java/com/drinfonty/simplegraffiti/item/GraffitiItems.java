@@ -4,11 +4,13 @@ import java.util.function.Supplier;
 
 import com.drinfonty.simplegraffiti.SimpleGraffiti;
 
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.UseEffects;
 
 /**
  * The mod's two items, and the one seam where registration differs per loader.
@@ -46,7 +48,11 @@ public final class GraffitiItems {
 			// durability() also pins the stack size to 1. Charges ride on vanilla's damage
 			// component so the durability bar, the tooltip and the item's own plumbing all work
 			// for free - the can simply refuses to paint at zero instead of breaking.
-			.durability(DEFAULT_CHARGES)));
+			.durability(DEFAULT_CHARGES)
+			// Spraying goes through the item-use path to get the drawn-bow pose, and using an
+			// item normally slows the player to a crawl and blocks sprinting. Painting a long
+			// wall should not feel like wading, so the can opts out: full speed, sprint allowed.
+			.component(DataComponents.USE_EFFECTS, new UseEffects(true, false, 1.0F))));
 
 		sink.accept(SCRUB_SPONGE_ID, () -> scrubSponge = new ScrubSpongeItem(new Item.Properties()
 			.setId(ResourceKey.create(Registries.ITEM, SCRUB_SPONGE_ID))

@@ -250,6 +250,33 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 	// ------------------------------------------------------------------ outgoing
 
 	@Override
+	public void startSpraying(InteractionHand hand) {
+		if (!canPaint()) {
+			warnUnavailable();
+			return;
+		}
+
+		// Vanilla will not call use() again while the item is already in use, but guard anyway:
+		// the tick loop owns the cadence and the stroke anchor once a spray is running.
+		if (spraying) {
+			return;
+		}
+
+		spraying = true;
+		sprayHand = hand;
+		sprayErases = false;
+		sprayCooldown = SPRAY_INTERVAL_TICKS;
+		feedbackCooldown = 0;
+		strokeAnchored = false;
+
+		BlockHitResult hit = findPaintTarget(Minecraft.getInstance());
+
+		if (hit != null) {
+			paint(hit.getBlockPos(), hit.getDirection(), hit.getLocation(), hand, false, false);
+		}
+	}
+
+	@Override
 	public void onUseOnFace(BlockPos pos, Direction face, Vec3 hit, InteractionHand hand,
 		boolean erase, boolean wholeFace) {
 		if (!canPaint()) {

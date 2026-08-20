@@ -33,6 +33,14 @@ public final class ClientHooks {
 
 	public interface PaintTrigger {
 		/**
+		 * The player began spraying, as an item <em>use</em> rather than a block interaction.
+		 *
+		 * <p>No target is passed: the client re-aims every tick anyway, and going through use is
+		 * what earns the can the bow-draw pose on the arm.
+		 */
+		void startSpraying(InteractionHand hand);
+
+		/**
 		 * The player used a paint tool on a face.
 		 *
 		 * @param erase true for the scrub sponge, false for the spray can
