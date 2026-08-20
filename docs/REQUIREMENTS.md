@@ -106,11 +106,13 @@ Design pillars, in priority order:
   inventory, bundle-style, which does not change its colour — so colour and charge are never
   traded against each other, and refilling needs no crafting table.
 - **FR-CAN-5 [M1]** In creative mode charges are not consumed.
-- **FR-CAN-6 [M1]** The player can set any colour in-game without crafting: a picker UI on a
-  keybind offering RGB/HSV sliders, a hex field, the 16 dye swatches as presets and a recent
-  colours row.
-- **FR-CAN-6a [M1]** Sneak-using the can on any block picks that block's colour into the can
-  (an eyedropper), so a build's palette can be matched without guessing hex values.
+- **FR-CAN-6 [M1]** The player can set any colour in-game without crafting: a picker UI offering
+  RGB/HSV sliders, a hex field, the 16 dye swatches as presets and a recent colours row. It opens
+  on **sneak-use with a can**, so it needs no keybind to be discovered, and also on a keybind for
+  players who want it without sneaking.
+- **FR-CAN-6a [M1]** The picker shows the colour of the block the player was looking at when it
+  opened, as a swatch that sets the colour when clicked (an eyedropper), so a build's palette can
+  be matched without guessing hex values.
 - **FR-CAN-7** The can is not enchantable and is not repaired in an anvil (v1.0).
 
 ### 4.2 Painting
@@ -125,7 +127,7 @@ Design pillars, in priority order:
   full-width surface such as snow, a slab or a carpet. Non-paintable targets do nothing and are not
   consumed against.
 - **FR-PAINT-4 [M1]** Painting is additive only; erasing is the scrub sponge's job (§4.3), so
-  that sneak-use is free for the eyedropper and no interaction is ambiguous.
+  that sneak-use is free for the colour picker and no interaction is ambiguous.
 - **FR-PAINT-6 [M1]** Breaking a block removes all paint on that block. Paint is not dropped
   and is not recoverable.
 - **FR-PAINT-7 [M1]** Painting over existing paint replaces the colour of the pixels covered.

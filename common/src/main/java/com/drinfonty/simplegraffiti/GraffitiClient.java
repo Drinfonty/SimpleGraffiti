@@ -12,7 +12,9 @@ import com.drinfonty.simplegraffiti.canvas.PaintColor;
 import com.drinfonty.simplegraffiti.client.ClientCanvasStore;
 import com.drinfonty.simplegraffiti.client.ClientPayloadSender;
 import com.drinfonty.simplegraffiti.client.ServerCapability;
+import com.drinfonty.simplegraffiti.client.gui.PaletteScreen;
 import com.drinfonty.simplegraffiti.config.ClientConfig;
+import com.drinfonty.simplegraffiti.item.ColorSampler;
 import com.drinfonty.simplegraffiti.item.GraffitiItems;
 import com.drinfonty.simplegraffiti.item.SprayCanItem;
 import com.drinfonty.simplegraffiti.net.GraffitiPayloads;
@@ -248,6 +250,45 @@ public final class GraffitiClient implements ClientHooks.PaintTrigger {
 	}
 
 	// ------------------------------------------------------------------ outgoing
+
+	/**
+	 * Opens the colour picker, carrying the colour of whatever the player is looking at.
+	 *
+	 * <p>Both ways in land here - sneak-use and the palette keybind - so the guards live in one
+	 * place. The sample is taken now rather than by the screen, because the moment the screen opens
+	 * the crosshair is over the panel and {@code hitResult} no longer means anything.
+	 */
+	@Override
+	public void openPalette() {
+		if (!canPaint()) {
+			warnUnavailable();
+			return;
+		}
+
+		Minecraft client = Minecraft.getInstance();
+
+		if (client.player == null || client.level == null
+			|| !GraffitiItems.isSprayCan(client.player.getMainHandItem())) {
+			return;
+		}
+
+		client.gui.setScreen(new PaletteScreen(viewedColor(client)));
+	}
+
+	/**
+	 * The colour of the block under the crosshair, or {@link PaletteScreen#NO_VIEWED_COLOR}.
+	 *
+	 * <p>Deliberately the plain crosshair pick rather than {@link #findPaintTarget}: this samples
+	 * what the player is looking at, which has nothing to do with whether it can be painted on.
+	 */
+	private static int viewedColor(Minecraft client) {
+		if (!(client.hitResult instanceof BlockHitResult block)
+			|| client.hitResult.getType() != HitResult.Type.BLOCK) {
+			return PaletteScreen.NO_VIEWED_COLOR;
+		}
+
+		return ColorSampler.sample(client.level, block.getBlockPos());
+	}
 
 	@Override
 	public void startSpraying(InteractionHand hand) {

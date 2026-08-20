@@ -9,7 +9,6 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
@@ -24,15 +23,19 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.DyedItemColor;
 import net.minecraft.world.item.component.TooltipDisplay;
-import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 
 /**
  * The spray can (SPEC 3).
  *
  * <p>Two verbs, and deliberately no third: <strong>use</strong> paints, <strong>sneak-use</strong>
- * picks a colour. Erasing belongs to the scrub sponge, which is what frees sneak-use for the
- * eyedropper and leaves no interaction ambiguous.
+ * opens the colour picker. Erasing belongs to the scrub sponge, which is what frees sneak-use and
+ * leaves no interaction ambiguous.
+ *
+ * <p>Sneak-use used to be the eyedropper, sampling whatever block was clicked. That reached a
+ * colour in one action but only if the player knew the gesture existed, and the picker itself was
+ * behind a keybind nobody had reason to discover. The picker now owns both: it opens on sneak-use
+ * and carries the colour under the crosshair as one of its swatches.
  *
  * <p>Painting itself does not happen here. The item only reports the interaction; the client turns
  * it into a paint request and the server decides. That indirection exists because holding use has
@@ -75,30 +78,29 @@ public class SprayCanItem extends Item {
 		stack.setDamageValue(Math.min(stack.getMaxDamage(), stack.getDamageValue() + 1));
 	}
 
-	@Override
-	public InteractionResult useOn(UseOnContext context) {
-		Level level = context.getLevel();
-
-		if (context.getPlayer() == null) {
-			return InteractionResult.PASS;
-		}
-
-		if (context.isSecondaryUseActive()) {
-			return eyedropper(context, level);
-		}
-
-		// Deliberately PASS so vanilla falls through to use(). Painting is an item use, not a
-		// block interaction, which is what puts the drawn-bow pose on the arm and holds the can
-		// forward while spraying. It also means spraying starts when aiming at nothing, the way a
-		// bow does, instead of silently doing nothing.
-		return InteractionResult.PASS;
-	}
-
+	/**
+	 * Both verbs are item <em>uses</em>, not block interactions.
+	 *
+	 * <p>{@code useOn} is deliberately not overridden: leaving it at vanilla's PASS lets both
+	 * gestures fall through to here whether or not the player is aiming at a block. That is what
+	 * puts the drawn-bow pose on the arm while spraying, and what stops sneak-use silently doing
+	 * nothing when aimed at the sky.
+	 */
 	@Override
 	public InteractionResult use(Level level, Player player, InteractionHand hand) {
-		// Sneak-use is the eyedropper, handled in useOn against the block that was clicked.
 		if (player.isSecondaryUseActive()) {
-			return InteractionResult.PASS;
+			if (level.isClientSide()) {
+				ClientHooks.PaintTrigger trigger = ClientHooks.trigger();
+
+				if (trigger != null) {
+					trigger.openPalette();
+				}
+			}
+
+			// CONSUME rather than SUCCESS: opening a screen is not an action worth swinging the
+			// arm for, and the server has nothing to do here at all - the picker sends its own
+			// packet when the player presses Apply.
+			return InteractionResult.CONSUME;
 		}
 
 		player.startUsingItem(hand);
@@ -137,17 +139,6 @@ public class SprayCanItem extends Item {
 		}
 
 		return false;
-	}
-
-	private InteractionResult eyedropper(UseOnContext context, Level level) {
-		if (!level.isClientSide()) {
-			setColor(context.getItemInHand(), ColorSampler.sample(level, context.getClickedPos()));
-		}
-
-		level.playSound(context.getPlayer(), context.getClickedPos(),
-			SoundEvents.NOTE_BLOCK_HAT.value(), SoundSource.PLAYERS, 0.5F, 1.0F);
-
-		return InteractionResult.SUCCESS;
 	}
 
 	@Override

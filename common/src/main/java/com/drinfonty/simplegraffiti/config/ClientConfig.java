@@ -33,7 +33,6 @@ public final class ClientConfig {
 	public int brushSize = Brush.SIZE_MEDIUM;
 	public List<String> recentColors = new ArrayList<>();
 	public boolean showPaintParticles = true;
-	public boolean paletteKeyOpensOnHoldOnly = false;
 
 	public boolean repair() {
 		ClientConfig defaults = new ClientConfig();

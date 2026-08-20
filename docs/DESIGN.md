@@ -305,7 +305,7 @@ It exists rather than reusing the vanilla wet sponge for two reasons. The first 
 mod set itself: *add no behaviour to vanilla items* — a wet sponge that silently gained a new
 right-click action is exactly the kind of surprise that makes mods hard to reason about, and
 would collide with any other mod doing the same. The second is interaction budget: sneak-use
-with the can is the eyedropper, so erasing needed its own verb anyway, and a dedicated item
+with the can opens the colour picker, so erasing needed its own verb anyway, and a dedicated item
 gives it one that is discoverable in the creative tab and the recipe book.
 
 Erasing runs through the *same* `PaintService` path as painting, with `value = 0` — same

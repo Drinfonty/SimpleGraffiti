@@ -3,10 +3,8 @@ package com.drinfonty.simplegraffiti.fabric;
 import com.drinfonty.simplegraffiti.GraffitiClient;
 import com.drinfonty.simplegraffiti.SimpleGraffiti;
 import com.drinfonty.simplegraffiti.client.ClientPayloadSender;
-import com.drinfonty.simplegraffiti.client.gui.PaletteScreen;
 import com.drinfonty.simplegraffiti.client.render.PaintSprites;
 import com.drinfonty.simplegraffiti.fabric.render.GraffitiWrapperModel;
-import com.drinfonty.simplegraffiti.item.GraffitiItems;
 import com.drinfonty.simplegraffiti.net.GraffitiPayloads;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -71,13 +69,9 @@ public class SimpleGraffitiFabricClient implements ClientModInitializer {
 			graffiti.tick();
 
 			while (paletteKey.consumeClick()) {
-				// Only while holding a can, and only when the server can actually apply the
-				// choice - a picker that silently does nothing is worse than no picker.
-				if (graffiti.canPaint()
-					&& client.player != null
-					&& GraffitiItems.isSprayCan(client.player.getMainHandItem())) {
-					client.gui.setScreen(new PaletteScreen());
-				}
+				// The same entry point sneak-use takes, so the two ways in cannot drift apart -
+				// including the sampling of whatever the player is looking at.
+				graffiti.openPalette();
 			}
 		});
 

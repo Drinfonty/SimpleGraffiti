@@ -291,8 +291,7 @@ A face `(pos, dir)` is paintable if **all** hold:
    `restrictToTag` is enabled, is in `#simple_graffiti:paintable`;
 5. the block is not a block entity with an interactive use action (chests, furnaces, signs,
    doors, beds, and anything whose right-click has an effect) — the spray MUST NOT pre-empt
-   vanilla interaction; sneak-use with a can, which suppresses vanilla interaction, MAY still
-   paint such blocks if they otherwise qualify;
+   vanilla interaction. Sneak-use with a can does not paint at all - it opens the picker (§5.3);
 6. fluids are never paintable.
 
 #### 5.1.1 Flat-topped surfaces
@@ -340,8 +339,9 @@ optional `message.simple_graffiti.not_paintable` action bar (rate-limited to one
 * Charge MUST drain on a **timer — one per 250 ms of spraying** — not once per sample, so a full
   can is always about thirty-two seconds of continuous paint regardless of the sample rate. This is
   also what stops a client that samples slowly from painting the same wall for fewer charges.
-* Sneak-use with a can MUST pick colour (§5.3), never paint and never erase. Erasing is the
-  scrub sponge's job (§3.3), so no interaction is ambiguous.
+* Sneak-use with a can MUST open the colour picker (§5.3), never paint and never erase. Erasing is
+  the scrub sponge's job (§3.3), so no interaction is ambiguous. It MUST open whether or not the
+  player is aiming at a block, which means it is handled in `use` rather than `useOn`.
 * Spraying MUST play `entity.generic.extinguish_fire` at volume 0.3 and pitch 1.6 ± 0.1, and MUST
   emit 1–2 `minecraft:dust` particles of the paint colour at the hit point, both at most once per
   5 ticks per player — twenty hisses a second is not a spray can.
@@ -362,17 +362,26 @@ optional `message.simple_graffiti.not_paintable` action bar (rate-limited to one
 
 Three ways to set an arbitrary colour, all reaching the same 24-bit RGB value:
 
-* **Eyedropper** — sneak-use with a can on any block MUST set the can's colour from that
-  block and play `block.note_block.hat`, without painting. The sampled colour MUST be the
-  block's `MapColor` RGB, except that blocks carrying a `DyeColor` (wool, carpet, concrete,
-  concrete powder, terracotta, glazed terracotta, stained glass and panes, shulker boxes,
-  candles, beds, banners) MUST use `DyeColor.getTextureDiffuseColor()` — sampling blue wool
-  MUST give exactly the blue that dyeing the can blue gives.
-* **Picker screen** — the **palette key** (default `G`, `key.simple_graffiti.palette`) opens
-  `PaletteScreen`: RGB and HSV sliders, a `#RRGGBB` hex field, the 16 dye colours as preset
-  swatches, a row of the last 8 colours used by this player, the three brush sizes, and
-  remaining charges. Choosing a colour sends `set_color` (§7.6). The screen MUST be openable
-  only while holding a can and only when the server capability is `READY`.
+* **Picker screen** — **sneak-use with a can**, or the **palette key** (default `G`,
+  `key.simple_graffiti.palette`), opens `PaletteScreen`: RGB and HSV sliders, a `#RRGGBB` hex
+  field, the 16 dye colours as preset swatches, a row of the last 8 colours used by this player,
+  the *looking at* swatch (below), the three brush sizes, and remaining charges. Choosing a colour
+  sends `set_color` (§7.6). The screen MUST be openable only while holding a can and only when the
+  server capability is `READY`. Both routes MUST go through one entry point, so they cannot drift
+  apart.
+* **Eyedropper** — the picker MUST show the colour of the block the player was looking at when it
+  opened, as a labelled swatch that sets the colour when clicked. The sample MUST be taken at the
+  moment of opening: once the screen is up the crosshair is over the panel and there is nothing in
+  the world to sample. When the player was not looking at a block the swatch MUST be drawn as an
+  empty well rather than omitted, so "you were not looking at anything" is distinguishable from a
+  missing feature.
+  The sampled colour MUST be the block's `MapColor` RGB, except that blocks carrying a `DyeColor`
+  (wool, carpet, concrete, concrete powder, terracotta, glazed terracotta, stained glass and panes,
+  shulker boxes, candles, beds, banners) MUST use `DyeColor.getTextureDiffuseColor()` — sampling
+  blue wool MUST give exactly the blue that dyeing the can blue gives.
+  The eyedropper MUST NOT be a separate gesture. It was one until the picker absorbed it: a
+  one-action shortcut is worth little when discovering it requires being told, and the same is true
+  of a picker hidden behind a keybind.
 * **Dye recipes** — §3.2, including mixing several dyes for blends.
 
 An invalid hex entry MUST disable the confirm button with an inline reason and MUST NOT
@@ -753,7 +762,8 @@ run (`:fabric:runServer`, `:neoforge:runServer`) plus at least two clients.
 5. An empty can paints nothing and reports it; a creative can never depletes.
 6. Non-paintable targets (glass pane, slab, chest front, fluid, occluded face) consume
    nothing and paint nothing, and the chest still opens.
-7. Colour: sneak-use on blue wool sets the can to exactly blue-wool blue; the picker sets an
+7. Colour: sneak-use while looking at blue wool opens the picker with a *looking at* swatch that
+   sets the can to exactly blue-wool blue; the picker sets an
    arbitrary hex value; crafting the can with red + white dye yields the same pink that
    leather armour would; refilling with magma cream keeps the colour and restores charges;
    dyeing keeps the charges. The item tint follows in every case.
