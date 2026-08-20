@@ -134,6 +134,11 @@ nothing else.
   `minecraft:wet_sponge` + one `minecraft:iron_nugget`.
 * **Use** on a painted face MUST erase a brush-sized area at the hit point, using the same
   brush and the same `Brush.stamp` maths as painting, with `value = 0`.
+* Holding use MUST play the `BRUSH` use animation, so the sponge scrubs back and forth while it
+  works. Started from `useOn` as vanilla's own brush does, which leaves sneak-use free to stay the
+  discrete whole-face wipe — one action, so it gets no animation.
+* The sponge MUST carry the same `minecraft:use_effects` exemption as the can: cleaning a wall
+  should not slow the player to a crawl.
 * **Sneak-use** on a painted face MUST clear that entire face.
 * Each use that changes at least one texel MUST consume 1 durability and play
   `block.sponge.absorb` at volume 0.4. A use that changes nothing MUST consume no durability.

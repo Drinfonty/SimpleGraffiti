@@ -56,7 +56,10 @@ public final class GraffitiItems {
 
 		sink.accept(SCRUB_SPONGE_ID, () -> scrubSponge = new ScrubSpongeItem(new Item.Properties()
 			.setId(ResourceKey.create(Registries.ITEM, SCRUB_SPONGE_ID))
-			.durability(DEFAULT_SPONGE_DURABILITY)));
+			.durability(DEFAULT_SPONGE_DURABILITY)
+			// Same reasoning as the can: the scrubbing pose comes from the item-use path, and
+			// the usual use-slowdown would make cleaning a wall feel like wading.
+			.component(DataComponents.USE_EFFECTS, new UseEffects(true, false, 1.0F))));
 	}
 
 	public static boolean isSprayCan(ItemStack stack) {
